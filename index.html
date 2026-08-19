@@ -127,6 +127,31 @@
   }
   #aiFab{display:none;position:fixed;right:16px;bottom:16px;z-index:81;width:54px;height:54px;border-radius:50%;border:none;background:var(--acc);color:#0b1220;font-size:22px;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.45)}
   .assist-head{display:none}
+  /* ===== reading experience ===== */
+  body.theme-light{--bg:#f4f5f7;--panel:#ffffff;--panel2:#eef0f3;--line:#dfe3e9;--txt:#1c2330;--sub:#6b7280;--chip:#e9ecf1;--acc:#2f6df6;--acc2:#1f9d63}
+  body.theme-sepia{--bg:#efe6d2;--panel:#f6efdd;--panel2:#eee2c6;--line:#ddceaa;--txt:#4a3f2c;--sub:#8a7c5f;--chip:#e8dbbd;--acc:#b06a2c;--acc2:#7a8b3a}
+  .reader{--rfs:16px;--rlh:1.95;--rls:0px;--rmw:720px}
+  .rd-tools{position:sticky;top:0;z-index:3;display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:var(--panel);padding:2px 0 8px}
+  .rd-prog{position:sticky;top:36px;z-index:3;height:4px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-bottom:12px}
+  .rd-prog>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--acc2))}
+  .rd-content{max-width:var(--rmw);margin:0 auto;font-size:var(--rfs);line-height:var(--rlh);letter-spacing:var(--rls)}
+  .reader.serif .rd-content{font-family:Georgia,"Songti SC","Noto Serif CJK SC",serif}
+  .rd-content p{cursor:pointer;padding:2px 6px;margin:0 0 14px;border-radius:6px;transition:background .15s}
+  .rd-content p.cur{background:rgba(110,168,254,.10)}
+  .rd-content p.hl{background:rgba(240,180,41,.20)}
+  mark.mk{background:rgba(240,180,41,.5);color:inherit;border-radius:3px;padding:0 1px;cursor:pointer}
+  body.focus .side,body.focus .assist,body.focus #aiFab,body.focus #buddyBar{display:none !important}
+  body.focus .reader-wrap .reader{flex:1}
+  body.focus .page{padding:8px}
+  .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);display:none;align-items:center;justify-content:center;z-index:300;cursor:zoom-out}
+  .lightbox.on{display:flex}
+  .lightbox img{max-width:94vw;max-height:94vh;border-radius:6px}
+  .toc-item{padding:9px 10px;border-radius:8px;cursor:pointer;font-size:13px}
+  .toc-item:hover{background:var(--panel2)}
+  .toc-item.cur{background:var(--acc);color:#0b1220}
+  .side{-webkit-overflow-scrolling:touch}
+  input[type=range]{padding:0}
+  @media (max-width:760px){.reader .rd-content{max-width:100% !important}}
 </style>
 </head>
 <body>
@@ -310,6 +335,7 @@
 <div class="sel-bar" id="selBar">
   <button onclick="selAct('explain')">解释</button>
   <button onclick="selAct('breakdown')">拆逻辑</button>
+  <button onclick="selAct('mark')">🖍高亮</button>
   <button onclick="selAct('feynman')">🎓讲给我听</button>
   <button onclick="selAct('fallacy')">🚩查谬误</button>
   <button onclick="selAct('concept')">存概念</button>
@@ -318,6 +344,7 @@
 </div>
 <button id="aiFab" onclick="toggleAssist()">💬</button>
 <div class="modal-bg" id="modalBg"><div class="modal" id="modal"></div></div>
+<div class="lightbox" id="lightbox" onclick="this.classList.remove('on')"><img id="lbImg" /></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -338,6 +365,7 @@ document.getElementById('nav').addEventListener('click',e=>{
   b.classList.add('on');
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
   document.getElementById('p-'+b.dataset.p).classList.add('on');
+  b.scrollIntoView({inline:'center',block:'nearest',behavior:'smooth'});
   render(b.dataset.p);
 });
 
@@ -495,20 +523,89 @@ document.getElementById('impData').addEventListener('change',e=>{
 
 /* ============ reader ============ */
 function curBook(){return S.books.find(b=>b.id===S.curBook)}
+function rp(){S.settings.read=S.settings.read||{fs:16,lh:1.95,ls:0,mw:720,theme:'dark',serif:false};return S.settings.read}
+function applyTheme(){const p=rp();document.body.classList.remove('theme-light','theme-sepia');if(p.theme==='light')document.body.classList.add('theme-light');else if(p.theme==='sepia')document.body.classList.add('theme-sepia')}
+function applyReadPrefs(){const p=rp();const rd=gid('reader');if(!rd)return;rd.style.setProperty('--rfs',p.fs+'px');rd.style.setProperty('--rlh',p.lh);rd.style.setProperty('--rls',p.ls+'px');rd.style.setProperty('--rmw',p.mw+'px');rd.classList.toggle('serif',!!p.serif);applyTheme()}
+function readerScrollEl(){return (window.innerWidth<=760)?document.scrollingElement:gid('reader')}
+let _rdState=null;
 function openReader(){
   const bk=curBook();const rd=document.getElementById('reader');
   if(!bk){return}
   ensureGm();if(S.gm.lastDay!==today())award(3,'阅读打卡');
-  const ch=bk.chapters[bk.curChap||0];
-  let nav='';
-  if(bk.chapters.length>1){nav='<div style="margin-bottom:14px">'+bk.chapters.map((c,i)=>`<span class="chip ${i===(bk.curChap||0)?'acc':''}" style="cursor:pointer" onclick="gotoChap(${i})">${c.title}</span>`).join('')+'</div>'}
-  const paras=ch.content.split(/\n+/).filter(x=>x.trim()).map(p=>{
-    if(p.charCodeAt(0)===1){const u=p.replace(/\u0001/g,'');return u?'<img src="'+u+'" style="max-width:100%;border-radius:8px;margin:12px auto;display:block" />':'';}
-    return '<p>'+esc(p)+'</p>';
-  }).join('');
-  rd.innerHTML=`<div style="font-size:12px;color:var(--sub);margin-bottom:6px">${esc(bk.title)}</div><h3 style="margin:0 0 14px">${esc(ch.title)}</h3>${nav}${paras}`;
+  const ci=bk.curChap||0;const ch=bk.chapters[ci];
+  const rawParas=ch.content.split(/\n+/).filter(x=>x.trim());
+  rd.innerHTML=`
+    <div class="rd-tools">
+      <button class="btn ghost mini" onclick="openTOC()">📑 目录·${bk.chapters.length}</button>
+      <button class="btn ghost mini" onclick="openReadSettings()">Aa 阅读设置</button>
+      <button class="btn ghost mini" onclick="toggleFocus()">⛶ 专注</button>
+      <span class="muted" id="rdMeta" style="margin-left:auto"></span>
+    </div>
+    <div class="rd-prog"><i id="rdProg"></i></div>
+    <div style="font-size:12px;color:var(--sub);margin-bottom:6px">${esc(bk.title)}</div>
+    <h3 style="margin:0 0 14px">${esc(ch.title)}</h3>
+    <div class="rd-content" id="rdContent"></div>
+    <div id="rdMore"></div>`;
+  applyReadPrefs();
+  _rdState={paras:rawParas,rendered:0,bk,ci,marks:(bk.marks&&bk.marks[ci])||[],hl:(bk.hl&&bk.hl[ci])||[]};
+  renderParaChunk(400);
+  restoreScroll((bk.pos&&bk.pos[ci])||0);
   renderBuddy();
 }
+function applyMarks(html,marks){if(!marks||!marks.length)return html;
+  marks.forEach(q=>{const eq=esc(q);if(eq&&html.indexOf(eq)>=0)html=html.split(eq).join('<mark class="mk" onclick="event.stopPropagation();removeMarkTxt(this.textContent)">'+eq+'</mark>')});
+  return html;}
+function renderParaChunk(n){
+  const st=_rdState;if(!st)return;const cont=gid('rdContent');if(!cont)return;
+  const end=Math.min(st.paras.length,st.rendered+n);let html='';
+  for(let i=st.rendered;i<end;i++){const p=st.paras[i];
+    if(p.charCodeAt(0)===1){const u=p.replace(/\u0001/g,'');html+=u?`<img loading="lazy" src="${u}" style="max-width:100%;border-radius:8px;margin:12px auto;display:block;cursor:zoom-in" onclick="lightbox(this.src)" />`:'';}
+    else{html+=`<p data-idx="${i}" class="${st.hl.includes(i)?'hl':''}" onclick="paraCur(${i})" ondblclick="paraHL(${i})">${applyMarks(esc(p),st.marks)}</p>`;}
+  }
+  cont.insertAdjacentHTML('beforeend',html);st.rendered=end;
+  const more=gid('rdMore');if(more)more.innerHTML=end<st.paras.length?'<button class="btn ghost mini" style="display:block;margin:12px auto" onclick="renderParaChunk(600)">加载更多（剩 '+(st.paras.length-end)+' 段）</button>':'';
+  updateProgMeta();
+}
+function restoreScroll(pos){let guard=0;function step(){const el=readerScrollEl();if(!el){return}
+  if(pos>el.scrollHeight-el.clientHeight&&_rdState&&_rdState.rendered<_rdState.paras.length&&guard<60){guard++;renderParaChunk(600);requestAnimationFrame(step);}
+  else{el.scrollTop=pos;updateProgMeta();}}
+  requestAnimationFrame(step);
+}
+function updateProgMeta(){const st=_rdState;if(!st)return;const el=readerScrollEl();if(!el)return;
+  const max=el.scrollHeight-el.clientHeight;const frac=max>0?Math.min(1,el.scrollTop/max):0;
+  const prog=gid('rdProg');if(prog)prog.style.width=(frac*100).toFixed(0)+'%';
+  const meta=gid('rdMeta');if(meta)meta.textContent='本章 '+(frac*100).toFixed(0)+'% · 全书 '+((st.ci+frac)/st.bk.chapters.length*100).toFixed(0)+'%';
+}
+let _scrollT;
+function onReaderScroll(){if(curPage()!=='read'||!_rdState)return;updateProgMeta();
+  const st=_rdState,el=readerScrollEl();
+  if(el&&st.rendered<st.paras.length&&el.scrollTop+el.clientHeight>=el.scrollHeight-600)renderParaChunk(600);
+  clearTimeout(_scrollT);_scrollT=setTimeout(saveScrollPos,300);
+}
+function saveScrollPos(){const st=_rdState;if(!st)return;const el=readerScrollEl();if(!el)return;
+  st.bk.pos=st.bk.pos||{};st.bk.pos[st.ci]=el.scrollTop;S.updatedAt=now();localStorage.setItem(KEY,JSON.stringify(S));scheduleSync();}
+function paraCur(i){const c=gid('rdContent');if(!c)return;c.querySelectorAll('p.cur').forEach(p=>p.classList.remove('cur'));const el=c.querySelector('p[data-idx="'+i+'"]');if(el)el.classList.add('cur');saveScrollPos();}
+function paraHL(i){const st=_rdState;if(!st)return;const bk=st.bk;bk.hl=bk.hl||{};bk.hl[st.ci]=bk.hl[st.ci]||[];const arr=bk.hl[st.ci];const k=arr.indexOf(i);if(k>=0)arr.splice(k,1);else arr.push(i);st.hl=arr;save();const el=gid('rdContent').querySelector('p[data-idx="'+i+'"]');if(el)el.classList.toggle('hl')}
+function addMark(text){const st=_rdState;if(!st)return toast('先打开一本书');const bk=st.bk;bk.marks=bk.marks||{};bk.marks[st.ci]=bk.marks[st.ci]||[];if(!bk.marks[st.ci].includes(text))bk.marks[st.ci].push(text);save();openReader();toast('已高亮（重开仍在，点高亮处可取消）')}
+function removeMarkTxt(t){const st=_rdState;if(!st)return;const bk=st.bk;if(bk.marks&&bk.marks[st.ci]){bk.marks[st.ci]=bk.marks[st.ci].filter(x=>x!==t);save();openReader()}}
+function lightbox(src){gid('lbImg').src=src;gid('lightbox').classList.add('on')}
+function openTOC(){const bk=curBook();if(!bk)return;showModal('<h3 style="margin:0 0 12px">📑 目录 · '+esc(bk.title)+'</h3><div style="max-height:60vh;overflow:auto">'+bk.chapters.map((c,i)=>`<div class="toc-item ${i===(bk.curChap||0)?'cur':''}" onclick="gotoChap(${i});closeModal()">${i+1}. ${esc(c.title)}</div>`).join('')+'</div>')}
+function toggleFocus(){document.body.classList.toggle('focus');const on=document.body.classList.contains('focus');let e=gid('focusExit');
+  if(on&&!e){e=document.createElement('button');e.id='focusExit';e.textContent='✕ 退出专注';e.className='btn ghost mini';e.style.cssText='position:fixed;top:10px;right:10px;z-index:310';e.onclick=toggleFocus;document.body.appendChild(e)}
+  else if(!on&&e)e.remove();
+  setTimeout(updateProgMeta,50);
+}
+function openReadSettings(){const p=rp();showModal(`<h3 style="margin:0 0 12px">Aa 阅读设置</h3>
+  <label>主题</label><div style="display:flex;gap:8px"><button class="btn ghost mini" onclick="setTheme('dark')">🌙 暗</button><button class="btn ghost mini" onclick="setTheme('light')">☀️ 明</button><button class="btn ghost mini" onclick="setTheme('sepia')">📜 米黄</button></div>
+  <label>字号 <span id="lblfs">${p.fs}px</span></label><input type="range" min="13" max="26" value="${p.fs}" oninput="setRead('fs',this.value)"/>
+  <label>行距 <span id="lbllh">${p.lh}</span></label><input type="range" min="14" max="26" value="${Math.round(p.lh*10)}" oninput="setRead('lh',this.value/10)"/>
+  <label>字间距 <span id="lblls">${p.ls}px</span></label><input type="range" min="0" max="4" step="0.5" value="${p.ls}" oninput="setRead('ls',this.value)"/>
+  <label>正文宽度 <span id="lblmw">${p.mw}px</span></label><input type="range" min="520" max="1000" step="20" value="${p.mw}" oninput="setRead('mw',this.value)"/>
+  <label style="display:flex;align-items:center;gap:8px;margin-top:12px"><input type="checkbox" style="width:auto" ${p.serif?'checked':''} onchange="setRead('serif',this.checked)"/> 衬线字体</label>
+  <div style="margin-top:14px"><button class="btn" onclick="closeModal()">完成</button></div>`)}
+function setTheme(t){rp().theme=t;save();applyTheme()}
+function setRead(k,v){const p=rp();p[k]=(k==='serif')?v:(k==='lh'?parseFloat(v):parseFloat(v));save();applyReadPrefs();
+  const lb=gid('lbl'+k);if(lb)lb.textContent=(k==='lh')?p[k]:(p[k]+'px')}
 async function renderBuddy(){
   const el=gid('buddyBar');if(!el)return;ensureGm();const t=today();
   if(S.gm.buddyDay===t&&S.gm.buddyQ)return showBuddy(S.gm.buddyQ);
@@ -546,8 +643,11 @@ function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 const selBar=document.getElementById('selBar');
 document.getElementById('reader').addEventListener('mouseup',()=>{
   const sel=window.getSelection();const t=sel.toString().trim();
-  if(t.length>1){S.curSel=t;const rc=sel.getRangeAt(0).getBoundingClientRect();
-    selBar.style.display='flex';selBar.style.left=Math.max(8,rc.left)+'px';selBar.style.top=(rc.top-46)+'px';
+  if(t.length>1&&sel.rangeCount){S.curSel=t;const rc=sel.getRangeAt(0).getBoundingClientRect();
+    selBar.style.display='flex';const bw=selBar.offsetWidth||300,bh=selBar.offsetHeight||40;
+    let left=rc.left+rc.width/2-bw/2;left=Math.max(8,Math.min(window.innerWidth-bw-8,left));
+    let top=rc.top-bh-8;if(top<8)top=Math.min(window.innerHeight-bh-8,rc.bottom+8);
+    selBar.style.left=left+'px';selBar.style.top=top+'px';
   }else selBar.style.display='none';
 });
 document.addEventListener('mousedown',e=>{if(!selBar.contains(e.target)&&e.target.closest('#reader')===null)selBar.style.display='none'});
@@ -572,6 +672,7 @@ async function selAct(act){
   if(act==='concept'){addConcept(sel);return}
   if(act==='arg'){openArgModal(sel);return}
   if(act==='analogy'){document.querySelector('.nav button[data-p=link]').click();document.getElementById('linkInput').value=sel;runAnalogy();return}
+  if(act==='mark'){addMark(sel);return}
   if(act==='feynman'){
     _feyn={text:sel};
     pushMsg('ai','🎓 <b>费曼模式</b>：请用你自己的话，把这段讲给"完全不懂的我"听（在下方追问框输入）。我会揪住听不懂的地方追问，直到你讲清楚。<div class="muted" style="margin-top:4px">原文：'+esc(sel.slice(0,60))+(sel.length>60?'…':'')+'</div>');
@@ -1080,25 +1181,38 @@ function cloudBadge(){const on=!!sbUser;const d=gid('cloudDot'),s=gid('cloudStat
 
 /* ============ boot ============ */
 if(window.pdfjsLib)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-ensureGm();aiBadge();cloudBadge();updateRevBadge();updateHUD();
+ensureGm();applyTheme();aiBadge();cloudBadge();updateRevBadge();updateHUD();
 document.body.classList.add('rp');
 if(S.curBook)openReader();
 restoreSession();
 setInterval(updateRevBadge,60000);
 window.addEventListener('focus',()=>{if(sbUser)pullMerge()});
+gid('reader').addEventListener('scroll',onReaderScroll,{passive:true});
+window.addEventListener('scroll',onReaderScroll,{passive:true});
 </script>
 <script>
 (function(){
   var rd=document.getElementById('reader'),bar=document.getElementById('selBar');
   if(!rd||!bar)return;
+  // 触摸划词工具条（防超屏）
   rd.addEventListener('touchend',function(){setTimeout(function(){
     var sel=window.getSelection(),t=sel.toString().trim();
     if(t.length>1&&sel.rangeCount){S.curSel=t;var rc=sel.getRangeAt(0).getBoundingClientRect();
-      bar.style.display='flex';
-      bar.style.left=Math.min(window.innerWidth-180,Math.max(8,rc.left))+'px';
-      bar.style.top=Math.max(8,rc.top-46)+'px';}
+      bar.style.display='flex';var bw=bar.offsetWidth||300,bh=bar.offsetHeight||40;
+      var left=Math.max(8,Math.min(window.innerWidth-bw-8,rc.left+rc.width/2-bw/2));
+      var top=rc.top-bh-8;if(top<8)top=Math.min(window.innerHeight-bh-8,rc.bottom+8);
+      bar.style.left=left+'px';bar.style.top=top+'px';}
     else bar.style.display='none';
   },60);});
+  // 左右滑动翻章
+  var sx=0,sy=0;
+  rd.addEventListener('touchstart',function(e){if(e.touches.length!==1)return;sx=e.touches[0].clientX;sy=e.touches[0].clientY},{passive:true});
+  rd.addEventListener('touchend',function(e){var tc=e.changedTouches[0];if(!tc)return;var dx=tc.clientX-sx,dy=tc.clientY-sy;
+    if(window.getSelection().toString().trim())return;
+    if(Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*2){var bk=curBook();if(!bk)return;var ci=bk.curChap||0;
+      if(dx<0&&ci<bk.chapters.length-1)gotoChap(ci+1);
+      else if(dx>0&&ci>0)gotoChap(ci-1);}
+  },{passive:true});
 })();
 </script>
 </body>
