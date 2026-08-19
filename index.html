@@ -134,7 +134,7 @@
   .rd-tools{position:sticky;top:0;z-index:3;display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:var(--panel);padding:2px 0 8px}
   .rd-prog{position:sticky;top:36px;z-index:3;height:4px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-bottom:12px}
   .rd-prog>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--acc2))}
-  .rd-content{max-width:var(--rmw);margin:0 auto;font-size:var(--rfs);line-height:var(--rlh);letter-spacing:var(--rls)}
+  .rd-content{max-width:var(--rmw);margin:0 auto;font-size:var(--rfs);line-height:var(--rlh);letter-spacing:var(--rls);-webkit-touch-callout:none}
   .reader.serif .rd-content{font-family:Georgia,"Songti SC","Noto Serif CJK SC",serif}
   .rd-content p{cursor:pointer;padding:2px 6px;margin:0 0 14px;border-radius:6px;transition:background .15s}
   .rd-content p.cur{background:rgba(110,168,254,.10)}
@@ -338,6 +338,7 @@
 <div class="sel-bar" id="selBar">
   <button onclick="selAct('explain')">解释</button>
   <button onclick="selAct('breakdown')">拆逻辑</button>
+  <button onclick="selAct('copy')">📋复制</button>
   <button onclick="selAct('mark')">🖍高亮</button>
   <button onclick="selAct('feynman')">🎓讲给我听</button>
   <button onclick="selAct('fallacy')">🚩查谬误</button>
@@ -672,6 +673,7 @@ async function selAct(act){
   if(act==='arg'){openArgModal(sel);return}
   if(act==='analogy'){document.querySelector('.nav button[data-p=link]').click();document.getElementById('linkInput').value=sel;runAnalogy();return}
   if(act==='mark'){addMark(sel);return}
+  if(act==='copy'){selBar.style.display='none';(navigator.clipboard?navigator.clipboard.writeText(sel):Promise.reject()).then(()=>toast('已复制')).catch(()=>toast('复制失败，请长按选择'));return}
   if(act==='feynman'){
     _feyn={text:sel};
     pushMsg('ai','🎓 <b>费曼模式</b>：请用你自己的话，把这段讲给"完全不懂的我"听（在下方追问框输入）。我会揪住听不懂的地方追问，直到你讲清楚。<div class="muted" style="margin-top:4px">原文：'+esc(sel.slice(0,60))+(sel.length>60?'…':'')+'</div>');
