@@ -122,7 +122,9 @@
     .row{flex-direction:column}
     .modal{width:92%}
     .grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
-    .sel-bar{flex-wrap:wrap;max-width:92vw}
+    .sel-bar{flex-wrap:nowrap;overflow-x:auto;max-width:none}
+    .sel-bar.mobile-bottom{position:fixed !important;left:8px !important;right:8px !important;bottom:14px !important;top:auto !important;justify-content:flex-start;border-radius:12px;padding:8px;-webkit-overflow-scrolling:touch;z-index:200}
+    .sel-bar.mobile-bottom button{flex:0 0 auto;padding:9px 12px}
     #graphCanvas{height:60vh !important}
   }
   #aiFab{display:none;position:fixed;right:16px;bottom:16px;z-index:81;width:54px;height:54px;border-radius:50%;border:none;background:var(--acc);color:#0b1220;font-size:22px;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.45)}
@@ -1224,15 +1226,12 @@ window.addEventListener('scroll',onReaderScroll,{passive:true});
 (function(){
   var rd=document.getElementById('reader'),bar=document.getElementById('selBar');
   if(!rd||!bar)return;
-  // 触摸划词工具条（防超屏）
+  // 触摸划词工具条：手机固定在屏幕底部，避开 iOS 原生复制菜单
   rd.addEventListener('touchend',function(){setTimeout(function(){
     var sel=window.getSelection(),t=sel.toString().trim();
-    if(t.length>1&&sel.rangeCount){S.curSel=t;var rc=sel.getRangeAt(0).getBoundingClientRect();
-      bar.style.display='flex';var bw=bar.offsetWidth||300,bh=bar.offsetHeight||40;
-      var left=Math.max(8,Math.min(window.innerWidth-bw-8,rc.left+rc.width/2-bw/2));
-      var top=rc.top-bh-8;if(top<8)top=Math.min(window.innerHeight-bh-8,rc.bottom+8);
-      bar.style.left=left+'px';bar.style.top=top+'px';}
-    else bar.style.display='none';
+    if(t.length>1&&sel.rangeCount){S.curSel=t;
+      bar.classList.add('mobile-bottom');bar.style.display='flex';bar.style.left='';bar.style.top='';}
+    else{bar.style.display='none';}
   },60);});
   // 左右滑动翻章
   var sx=0,sy=0;
