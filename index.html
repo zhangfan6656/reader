@@ -1182,19 +1182,29 @@ let sb=null, sbUser=null, _syncT=null;
 function sbCfg(){try{return JSON.parse(localStorage.getItem(SB_CFG))||{}}catch(e){return{}}}
 function gid(id){return document.getElementById(id)}
 function sbMsg(t){const e=gid('sbMsg');if(e)e.textContent=t}
-function initSb(){const c=sbCfg();if(c.url&&c.key&&window.supabase){sb=window.supabase.createClient(c.url,c.key);return true}return false}
+function initSb(){const c=sbCfg();if(c.url&&c.key&&window.supabase){sb=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storageKey:'air_sb_session',storage:window.localStorage}});return true}return false}
+const CRED='air_sb_cred';
+function saveCred(email,pass){try{localStorage.setItem(CRED,JSON.stringify({email,pass}))}catch(e){}}
+function getCred(){try{return JSON.parse(localStorage.getItem(CRED))||null}catch(e){return null}}
+function clearCred(){localStorage.removeItem(CRED)}
 function saveSb(){localStorage.setItem(SB_CFG,JSON.stringify({url:gid('sbUrl').value.trim(),key:gid('sbKey').value.trim()}));initSb();cloudBadge();sbMsg('已保存连接，请登录')}
 async function sbRegister(){if(!sb&&!initSb())return sbMsg('先保存 Supabase 连接');
   const {error}=await sb.auth.signUp({email:gid('sbEmail').value.trim(),password:gid('sbPass').value.trim()});
   if(error)return sbMsg('注册失败：'+error.message);
   sbMsg('注册成功。若项目开了邮箱验证，请查收邮件确认后再登录；否则可直接登录。')}
 async function sbLogin(){if(!sb&&!initSb())return sbMsg('先保存 Supabase 连接');
-  const {data,error}=await sb.auth.signInWithPassword({email:gid('sbEmail').value.trim(),password:gid('sbPass').value.trim()});
+  const email=gid('sbEmail').value.trim(),pass=gid('sbPass').value.trim();
+  const {data,error}=await sb.auth.signInWithPassword({email,password:pass});
   if(error)return sbMsg('登录失败：'+error.message);
-  sbUser=data.user;cloudBadge();sbMsg('登录成功，正在同步…');await pullMerge();}
-async function sbLogout(){if(sb)await sb.auth.signOut();sbUser=null;cloudBadge();sbMsg('已退出登录')}
+  sbUser=data.user;saveCred(email,pass);cloudBadge();sbMsg('登录成功，已记住登录，正在同步…');await pullMerge();}
+async function sbLogout(){if(sb)await sb.auth.signOut();sbUser=null;clearCred();cloudBadge();sbMsg('已退出登录')}
 async function restoreSession(){if(!initSb())return;try{const {data}=await sb.auth.getSession();
-  if(data&&data.session){sbUser=data.session.user;cloudBadge();await pullMerge()}}catch(e){}}
+  if(data&&data.session){sbUser=data.session.user;cloudBadge();await pullMerge();return}
+  // 会话丢失（iOS 常清 localStorage）→ 用记住的凭据自动重登
+  const cr=getCred();
+  if(cr&&cr.email&&cr.pass){const {data:d2,error}=await sb.auth.signInWithPassword({email:cr.email,password:cr.pass});
+    if(!error&&d2&&d2.user){sbUser=d2.user;cloudBadge();sbMsg('已自动登录');await pullMerge()}}
+}catch(e){}}
 async function pullMerge(){ // last-write-wins by updatedAt
   if(!sb||!sbUser)return;
   const {data,error}=await sb.from('reading_data').select('data,updated_at').eq('user_id',sbUser.id).maybeSingle();
