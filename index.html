@@ -140,6 +140,8 @@
   .rd-content p.cur{background:rgba(110,168,254,.10)}
   .rd-content p.hl{background:rgba(240,180,41,.20)}
   mark.mk{background:rgba(240,180,41,.5);color:inherit;border-radius:3px;padding:0 1px;cursor:pointer}
+  mark.bm-flash{background:rgba(240,180,41,.95);color:#0b1220;animation:bmf .7s ease-in-out 3}
+  @keyframes bmf{50%{background:rgba(110,168,254,.9)}}
   body.focus .side,body.focus .assist,body.focus #buddyBar{display:none !important}
   body.focus .assist.open{display:block !important}
   body.focus .reader-wrap .reader{flex:1}
@@ -340,6 +342,7 @@
   <button onclick="selAct('breakdown')">拆逻辑</button>
   <button onclick="selAct('copy')">📋复制</button>
   <button onclick="selAct('mark')">🖍高亮</button>
+  <button onclick="selAct('bookmark')">🔖书签</button>
   <button onclick="selAct('feynman')">🎓讲给我听</button>
   <button onclick="selAct('fallacy')">🚩查谬误</button>
   <button onclick="selAct('concept')">存概念</button>
@@ -595,27 +598,30 @@ function addMark(text){const st=_rdState;if(!st)return toast('先打开一本书
 function removeMarkTxt(t){const st=_rdState;if(!st)return;const bk=st.bk;if(bk.marks&&bk.marks[st.ci]){bk.marks[st.ci]=bk.marks[st.ci].filter(x=>x!==t);save();openReader()}}
 function lightbox(src){gid('lbImg').src=src;gid('lightbox').classList.add('on')}
 function openTOC(){const bk=curBook();if(!bk)return;showModal('<h3 style="margin:0 0 12px">📑 目录 · '+esc(bk.title)+'</h3><div style="max-height:60vh;overflow:auto">'+bk.chapters.map((c,i)=>`<div class="toc-item ${i===(bk.curChap||0)?'cur':''}" onclick="gotoChap(${i});closeModal()">${i+1}. ${esc(c.title)}</div>`).join('')+'</div>')}
-function currentTopPara(){const cont=gid('rdContent');if(!cont)return 0;
-  const cur=cont.querySelector('p.cur');if(cur)return parseInt(cur.dataset.idx);
-  const mob=readerScrollEl()===document.scrollingElement;const refTop=mob?72:(gid('reader').getBoundingClientRect().top+44);
-  const ps=cont.querySelectorAll('p[data-idx]');
-  for(const p of ps){if(p.getBoundingClientRect().bottom>refTop)return parseInt(p.dataset.idx);}
-  return ps.length?parseInt(ps[ps.length-1].dataset.idx):0;
-}
-function scrollToPara(idx){const st=_rdState;if(!st)return;
+function scrollToQuote(quote,idx){const st=_rdState;if(!st)return;
+  if(typeof idx!=='number'||idx<0||(st.paras[idx]||'').indexOf(quote)<0)idx=st.paras.findIndex(p=>p.indexOf(quote)>=0);
+  if(idx<0)idx=0;
   while(st.rendered<=idx&&st.rendered<st.paras.length)renderParaChunk(600);
-  requestAnimationFrame(()=>{const p=gid('rdContent').querySelector('p[data-idx="'+idx+'"]');if(p){p.scrollIntoView({block:'start',behavior:'smooth'});paraCur(idx);}});
+  requestAnimationFrame(()=>{const p=gid('rdContent').querySelector('p[data-idx="'+idx+'"]');if(!p)return;
+    const eq=esc(quote),html=p.innerHTML,pos=html.indexOf(eq);
+    if(pos>=0){p.innerHTML=html.slice(0,pos)+'<mark class="mk bm-flash">'+eq+'</mark>'+html.slice(pos+eq.length);
+      const fm=p.querySelector('.bm-flash');if(fm)fm.scrollIntoView({block:'center',behavior:'smooth'});
+      setTimeout(()=>{if(_rdState)p.innerHTML=applyMarks(esc(_rdState.paras[idx]),_rdState.marks)},2600);
+    }else{p.scrollIntoView({block:'center',behavior:'smooth'});paraCur(idx)}
+    saveScrollPos();
+  });
 }
 function openBookmarks(){const bk=curBook();if(!bk)return;const list=bk.bm||[];
-  showModal('<h3 style="margin:0 0 10px">🔖 书签</h3><button class="btn mini" onclick="addBookmark()">＋ 在当前位置添加书签</button><div style="max-height:54vh;overflow:auto;margin-top:12px">'+
-    (list.length?list.map((b,k)=>`<div class="toc-item" style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="flex:1;cursor:pointer" onclick="jumpBookmark(${k})"><span class="chip">${bk.chapters[b.ci]?esc(bk.chapters[b.ci].title.slice(0,12)):'?'}</span> ${esc(b.text||'')||'（无预览）'}</span><button class="btn ghost mini" onclick="delBookmark(${k})">删</button></div>`).join(''):'<div class="empty">还没有书签，点上方按钮添加</div>')+'</div>')}
-function addBookmark(){const st=_rdState;if(!st)return toast('先打开一本书');const bk=st.bk;const idx=currentTopPara();
-  const text=(st.paras[idx]||'').replace(/\u0001[^\u0001]*\u0001/g,'').slice(0,40);
-  bk.bm=bk.bm||[];bk.bm.push({ci:st.ci,idx,text,t:now()});save();toast('已加书签');openBookmarks()}
+  showModal('<h3 style="margin:0 0 8px">🔖 书签</h3><div class="muted" style="margin-bottom:10px">选中正文文字 → 点划词条上的「🔖书签」即可添加，跳转会精确定位到那句话。</div><div style="max-height:56vh;overflow:auto">'+
+    (list.length?list.map((b,k)=>`<div class="toc-item" style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="flex:1;cursor:pointer" onclick="jumpBookmark(${k})"><span class="chip">${bk.chapters[b.ci]?esc(bk.chapters[b.ci].title.slice(0,12)):'?'}</span> ${esc(b.text||'')||'（无预览）'}</span><button class="btn ghost mini" onclick="delBookmark(${k})">删</button></div>`).join(''):'<div class="empty">还没有书签</div>')+'</div>')}
+function addTextBookmark(sel){const st=_rdState;if(!st)return toast('先打开一本书');const bk=st.bk;
+  const q=sel.trim();if(q.length<2)return toast('请多选几个字');
+  const idx=st.paras.findIndex(p=>p.indexOf(q)>=0);
+  bk.bm=bk.bm||[];bk.bm.push({ci:st.ci,quote:q,idx,text:q.slice(0,40),t:now()});save();toast('已加书签 🔖')}
 function delBookmark(k){const bk=curBook();if(!bk||!bk.bm)return;bk.bm.splice(k,1);save();openBookmarks()}
 function jumpBookmark(k){const bk=curBook();if(!bk||!bk.bm||!bk.bm[k])return;const b=bk.bm[k];closeModal();
   if((bk.curChap||0)!==b.ci){bk.curChap=b.ci;save();openReader()}
-  setTimeout(()=>scrollToPara(b.idx),90)}
+  setTimeout(()=>scrollToQuote(b.quote,b.idx),90)}
 function toggleFocus(){const on=document.body.classList.toggle('focus');const b=gid('focusBtn');if(b)b.textContent=on?'✓ 退出专注':'⛶ 专注';setTimeout(updateProgMeta,50)}
 function openReadSettings(){const p=rp();showModal(`<h3 style="margin:0 0 12px">Aa 阅读设置</h3>
   <label>主题</label><div style="display:flex;gap:8px"><button class="btn ghost mini" onclick="setTheme('dark')">🌙 暗</button><button class="btn ghost mini" onclick="setTheme('light')">☀️ 明</button><button class="btn ghost mini" onclick="setTheme('sepia')">📜 米黄</button></div>
@@ -695,6 +701,7 @@ async function selAct(act){
   if(act==='arg'){openArgModal(sel);return}
   if(act==='analogy'){document.querySelector('.nav button[data-p=link]').click();document.getElementById('linkInput').value=sel;runAnalogy();return}
   if(act==='mark'){addMark(sel);return}
+  if(act==='bookmark'){addTextBookmark(sel);return}
   if(act==='copy'){selBar.style.display='none';(navigator.clipboard?navigator.clipboard.writeText(sel):Promise.reject()).then(()=>toast('已复制')).catch(()=>toast('复制失败，请长按选择'));return}
   if(act==='feynman'){
     _feyn={text:sel};
