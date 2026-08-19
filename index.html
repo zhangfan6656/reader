@@ -541,6 +541,7 @@ function openReader(){
   rd.innerHTML=`
     <div class="rd-tools">
       <button class="btn ghost mini" onclick="openTOC()">📑 目录·${bk.chapters.length}</button>
+      <button class="btn ghost mini" onclick="openBookmarks()">🔖 书签</button>
       <button class="btn ghost mini" onclick="openReadSettings()">Aa 阅读设置</button>
       <button class="btn ghost mini" id="focusBtn" onclick="toggleFocus()">${document.body.classList.contains('focus')?'✓ 退出专注':'⛶ 专注'}</button>
       <span class="muted" id="rdMeta" style="margin-left:auto"></span>
@@ -594,6 +595,27 @@ function addMark(text){const st=_rdState;if(!st)return toast('先打开一本书
 function removeMarkTxt(t){const st=_rdState;if(!st)return;const bk=st.bk;if(bk.marks&&bk.marks[st.ci]){bk.marks[st.ci]=bk.marks[st.ci].filter(x=>x!==t);save();openReader()}}
 function lightbox(src){gid('lbImg').src=src;gid('lightbox').classList.add('on')}
 function openTOC(){const bk=curBook();if(!bk)return;showModal('<h3 style="margin:0 0 12px">📑 目录 · '+esc(bk.title)+'</h3><div style="max-height:60vh;overflow:auto">'+bk.chapters.map((c,i)=>`<div class="toc-item ${i===(bk.curChap||0)?'cur':''}" onclick="gotoChap(${i});closeModal()">${i+1}. ${esc(c.title)}</div>`).join('')+'</div>')}
+function currentTopPara(){const cont=gid('rdContent');if(!cont)return 0;
+  const cur=cont.querySelector('p.cur');if(cur)return parseInt(cur.dataset.idx);
+  const mob=readerScrollEl()===document.scrollingElement;const refTop=mob?72:(gid('reader').getBoundingClientRect().top+44);
+  const ps=cont.querySelectorAll('p[data-idx]');
+  for(const p of ps){if(p.getBoundingClientRect().bottom>refTop)return parseInt(p.dataset.idx);}
+  return ps.length?parseInt(ps[ps.length-1].dataset.idx):0;
+}
+function scrollToPara(idx){const st=_rdState;if(!st)return;
+  while(st.rendered<=idx&&st.rendered<st.paras.length)renderParaChunk(600);
+  requestAnimationFrame(()=>{const p=gid('rdContent').querySelector('p[data-idx="'+idx+'"]');if(p){p.scrollIntoView({block:'start',behavior:'smooth'});paraCur(idx);}});
+}
+function openBookmarks(){const bk=curBook();if(!bk)return;const list=bk.bm||[];
+  showModal('<h3 style="margin:0 0 10px">🔖 书签</h3><button class="btn mini" onclick="addBookmark()">＋ 在当前位置添加书签</button><div style="max-height:54vh;overflow:auto;margin-top:12px">'+
+    (list.length?list.map((b,k)=>`<div class="toc-item" style="display:flex;justify-content:space-between;gap:8px;align-items:center"><span style="flex:1;cursor:pointer" onclick="jumpBookmark(${k})"><span class="chip">${bk.chapters[b.ci]?esc(bk.chapters[b.ci].title.slice(0,12)):'?'}</span> ${esc(b.text||'')||'（无预览）'}</span><button class="btn ghost mini" onclick="delBookmark(${k})">删</button></div>`).join(''):'<div class="empty">还没有书签，点上方按钮添加</div>')+'</div>')}
+function addBookmark(){const st=_rdState;if(!st)return toast('先打开一本书');const bk=st.bk;const idx=currentTopPara();
+  const text=(st.paras[idx]||'').replace(/\u0001[^\u0001]*\u0001/g,'').slice(0,40);
+  bk.bm=bk.bm||[];bk.bm.push({ci:st.ci,idx,text,t:now()});save();toast('已加书签');openBookmarks()}
+function delBookmark(k){const bk=curBook();if(!bk||!bk.bm)return;bk.bm.splice(k,1);save();openBookmarks()}
+function jumpBookmark(k){const bk=curBook();if(!bk||!bk.bm||!bk.bm[k])return;const b=bk.bm[k];closeModal();
+  if((bk.curChap||0)!==b.ci){bk.curChap=b.ci;save();openReader()}
+  setTimeout(()=>scrollToPara(b.idx),90)}
 function toggleFocus(){const on=document.body.classList.toggle('focus');const b=gid('focusBtn');if(b)b.textContent=on?'✓ 退出专注':'⛶ 专注';setTimeout(updateProgMeta,50)}
 function openReadSettings(){const p=rp();showModal(`<h3 style="margin:0 0 12px">Aa 阅读设置</h3>
   <label>主题</label><div style="display:flex;gap:8px"><button class="btn ghost mini" onclick="setTheme('dark')">🌙 暗</button><button class="btn ghost mini" onclick="setTheme('light')">☀️ 明</button><button class="btn ghost mini" onclick="setTheme('sepia')">📜 米黄</button></div>
