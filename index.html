@@ -1184,9 +1184,12 @@ function gid(id){return document.getElementById(id)}
 function sbMsg(t){const e=gid('sbMsg');if(e)e.textContent=t}
 function initSb(){const c=sbCfg();if(c.url&&c.key&&window.supabase){sb=window.supabase.createClient(c.url,c.key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storageKey:'air_sb_session',storage:window.localStorage}});return true}return false}
 const CRED='air_sb_cred';
-function saveCred(email,pass){try{localStorage.setItem(CRED,JSON.stringify({email,pass}))}catch(e){}}
-function getCred(){try{return JSON.parse(localStorage.getItem(CRED))||null}catch(e){return null}}
-function clearCred(){localStorage.removeItem(CRED)}
+function _setCk(k,v){try{document.cookie=k+'='+encodeURIComponent(v)+';path=/;max-age=34560000;samesite=lax'}catch(e){}}
+function _getCk(k){try{const m=document.cookie.match('(?:^|; )'+k+'=([^;]*)');return m?decodeURIComponent(m[1]):''}catch(e){return''}}
+function _delCk(k){try{document.cookie=k+'=;path=/;max-age=0'}catch(e){}}
+function saveCred(email,pass){const v=JSON.stringify({email,pass});try{localStorage.setItem(CRED,v)}catch(e){}_setCk(CRED,v)}
+function getCred(){let v='';try{v=localStorage.getItem(CRED)||''}catch(e){}if(!v)v=_getCk(CRED);try{return JSON.parse(v)||null}catch(e){return null}}
+function clearCred(){try{localStorage.removeItem(CRED)}catch(e){}_delCk(CRED)}
 function saveSb(){localStorage.setItem(SB_CFG,JSON.stringify({url:gid('sbUrl').value.trim(),key:gid('sbKey').value.trim()}));initSb();cloudBadge();sbMsg('已保存连接，请登录')}
 async function sbRegister(){if(!sb&&!initSb())return sbMsg('先保存 Supabase 连接');
   const {error}=await sb.auth.signUp({email:gid('sbEmail').value.trim(),password:gid('sbPass').value.trim()});
@@ -1198,13 +1201,16 @@ async function sbLogin(){if(!sb&&!initSb())return sbMsg('先保存 Supabase 连�
   if(error)return sbMsg('登录失败：'+error.message);
   sbUser=data.user;saveCred(email,pass);cloudBadge();sbMsg('登录成功，已记住登录，正在同步…');await pullMerge();}
 async function sbLogout(){if(sb)await sb.auth.signOut();sbUser=null;clearCred();cloudBadge();sbMsg('已退出登录')}
-async function restoreSession(){if(!initSb())return;try{const {data}=await sb.auth.getSession();
-  if(data&&data.session){sbUser=data.session.user;cloudBadge();await pullMerge();return}
+async function restoreSession(){if(!initSb())return false;try{const {data}=await sb.auth.getSession();
+  if(data&&data.session){sbUser=data.session.user;cloudBadge();await pullMerge();return true}
   // 会话丢失（iOS 常清 localStorage）→ 用记住的凭据自动重登
   const cr=getCred();
-  if(cr&&cr.email&&cr.pass){const {data:d2,error}=await sb.auth.signInWithPassword({email:cr.email,password:cr.pass});
-    if(!error&&d2&&d2.user){sbUser=d2.user;cloudBadge();sbMsg('已自动登录');await pullMerge()}}
-}catch(e){}}
+  if(cr&&cr.email&&cr.pass){sbMsg('检测到登录信息，正在自动登录…');const {data:d2,error}=await sb.auth.signInWithPassword({email:cr.email,password:cr.pass});
+    if(!error&&d2&&d2.user){sbUser=d2.user;cloudBadge();sbMsg('已自动登录');toast('已自动登录云端');await pullMerge();return true}
+    if(error)sbMsg('自动登录失败：'+error.message)}
+}catch(e){}return false}
+// 等 supabase CDN 就绪再恢复会话（移动端网络慢时脚本可能还没加载完）
+function bootRestore(n){if(window.supabase){restoreSession();return}if(n<=0)return;setTimeout(()=>bootRestore(n-1),400)}
 async function pullMerge(){ // last-write-wins by updatedAt
   if(!sb||!sbUser)return;
   const {data,error}=await sb.from('reading_data').select('data,updated_at').eq('user_id',sbUser.id).maybeSingle();
@@ -1226,9 +1232,9 @@ if(window.pdfjsLib)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.
 ensureGm();applyTheme();aiBadge();cloudBadge();updateRevBadge();updateHUD();
 document.body.classList.add('rp');
 if(S.curBook)openReader();
-restoreSession();
+bootRestore(25);
 setInterval(updateRevBadge,60000);
-window.addEventListener('focus',()=>{if(sbUser)pullMerge()});
+window.addEventListener('focus',()=>{if(sbUser)pullMerge();else bootRestore(1)});
 gid('reader').addEventListener('scroll',onReaderScroll,{passive:true});
 window.addEventListener('scroll',onReaderScroll,{passive:true});
 </script>
