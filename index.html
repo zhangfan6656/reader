@@ -155,6 +155,7 @@
   <main class="main">
     <!-- READ -->
     <section class="page on" id="p-read">
+      <div id="buddyBar" style="display:none"></div>
       <div class="reader-wrap">
         <div class="reader" id="reader">
           <div class="empty">左上角选择「知识库→导入」或下方直接粘贴一段材料开始阅读。<br><br>
@@ -309,6 +310,8 @@
 <div class="sel-bar" id="selBar">
   <button onclick="selAct('explain')">解释</button>
   <button onclick="selAct('breakdown')">拆逻辑</button>
+  <button onclick="selAct('feynman')">🎓讲给我听</button>
+  <button onclick="selAct('fallacy')">🚩查谬误</button>
   <button onclick="selAct('concept')">存概念</button>
   <button onclick="selAct('arg')">标论据</button>
   <button onclick="selAct('analogy')">找类比</button>
@@ -504,7 +507,38 @@ function openReader(){
     return '<p>'+esc(p)+'</p>';
   }).join('');
   rd.innerHTML=`<div style="font-size:12px;color:var(--sub);margin-bottom:6px">${esc(bk.title)}</div><h3 style="margin:0 0 14px">${esc(ch.title)}</h3>${nav}${paras}`;
+  renderBuddy();
 }
+async function renderBuddy(){
+  const el=gid('buddyBar');if(!el)return;ensureGm();const t=today();
+  if(S.gm.buddyDay===t&&S.gm.buddyQ)return showBuddy(S.gm.buddyQ);
+  if(S.gm.buddyDay===t){el.style.display='none';return}
+  const weak=S.concepts.filter(c=>['未接触','初步理解','能复述'].includes(c.mastery));
+  if(!weak.length){el.style.display='none';return}
+  const c=weak[Math.floor(Math.random()*weak.length)];
+  let q='用你自己的话说说「'+c.name+'」是什么？它能用在什么场景，边界在哪？';
+  if(hasAI()){try{const r=await llm('你是苏格拉底式读书搭子。针对用户一个尚未掌握的概念，提一个能引发深度思考的开放式问题(结合应用/反例/边界，任选)。只输出问题本身，中文，一句话。','概念：'+c.name);if(r&&r.trim())q=r.trim();}catch(e){}}
+  S.gm.buddyDay=t;S.gm.buddyQ={q,concept:c.name};save();showBuddy(S.gm.buddyQ);
+}
+function showBuddy(bq){const el=gid('buddyBar');if(!el)return;el.style.display='block';
+  el.innerHTML=`<div class="card" style="border-color:var(--acc);margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><b>🤝 今日读书搭子</b><button class="btn ghost mini" onclick="dismissBuddy()">跳过</button></div>
+    <div style="margin:8px 0;font-size:14px">${esc(bq.q)}</div>
+    <textarea id="buddyAns" rows="2" placeholder="随手答两句，续上火苗🔥…"></textarea>
+    <div style="margin-top:8px"><button class="btn mini" onclick="answerBuddy()">提交回答</button> <span class="muted" style="margin-left:6px">关于：${esc(bq.concept||'')}</span></div>
+  </div>`;
+}
+async function answerBuddy(){
+  const ta=gid('buddyAns');const a=ta?ta.value.trim():'';if(!a)return toast('写两句再提交');
+  const bq=S.gm.buddyQ;S.qa.push({id:uid(),q:bq&&bq.q,a,t:now(),tag:'buddy'});award(8,'读书搭子');
+  const el=gid('buddyBar');S.gm.buddyQ=null;save();
+  if(hasAI()&&bq){el.innerHTML='<div class="card" style="margin-bottom:14px"><div class="muted">搭子思考中…</div></div>';
+    try{const r=await llm('你是苏格拉底式读书搭子。用1-2句简短点评用户的回答，指出可深化处或追问一句。中文。','问题：'+bq.q+'\n概念：'+bq.concept+'\n回答：'+a);
+      el.innerHTML='<div class="card" style="border-color:var(--acc2);margin-bottom:14px"><b>🤝 搭子反馈</b><div style="margin-top:6px;font-size:13px">'+mdlite(r)+'</div><div class="muted" style="margin-top:6px">+8 XP · 明天见 👋</div></div>';
+    }catch(e){el.innerHTML='<div class="card" style="margin-bottom:14px">已记录 +8 XP · 明天见 👋</div>';}
+  }else{el.innerHTML='<div class="card" style="margin-bottom:14px">已记录 +8 XP · 明天见 👋</div>';}
+}
+function dismissBuddy(){ensureGm();S.gm.buddyDay=today();S.gm.buddyQ=null;save();const el=gid('buddyBar');if(el)el.style.display='none';}
 function gotoChap(i){const bk=curBook();bk.curChap=i;save();openReader()}
 function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
 
@@ -538,6 +572,23 @@ async function selAct(act){
   if(act==='concept'){addConcept(sel);return}
   if(act==='arg'){openArgModal(sel);return}
   if(act==='analogy'){document.querySelector('.nav button[data-p=link]').click();document.getElementById('linkInput').value=sel;runAnalogy();return}
+  if(act==='feynman'){
+    _feyn={text:sel};
+    pushMsg('ai','🎓 <b>费曼模式</b>：请用你自己的话，把这段讲给"完全不懂的我"听（在下方追问框输入）。我会揪住听不懂的地方追问，直到你讲清楚。<div class="muted" style="margin-top:4px">原文：'+esc(sel.slice(0,60))+(sel.length>60?'…':'')+'</div>');
+    return;
+  }
+  if(act==='fallacy'){
+    pushMsg('user','🚩 查谬误：'+esc(sel.slice(0,60))+(sel.length>60?'…':''));
+    if(!hasAI()){pushMsg('ai','谬误检测需在「设置」接入大模型。');return}
+    pushMsg('ai','<span class="muted">扫描中…</span>');
+    try{
+      const r=await llm('你是批判性思维教练。检查文本是否含常见认知偏误/逻辑谬误(如幸存者偏差、以偏概全、诉诸权威、滑坡谬误、因果倒置、稻草人、确认偏误、诉诸情感等)。返回JSON：{items:[{name,quote,why}]}，quote为命中的原文片段，why用一句说明为何是此谬误；无则items为空数组。中文。','文本：\n'+sel,true);
+      const j=JSON.parse(r);document.getElementById('assistOut').lastChild.remove();
+      if(!j.items||!j.items.length){pushMsg('ai','✅ 未检出明显谬误/认知偏误。');return}
+      pushMsg('ai','🚩 检出 '+j.items.length+' 处：'+j.items.map(it=>`<div style="border-top:1px solid var(--line);padding-top:6px;margin-top:6px"><b class="tag-conflict">${esc(it.name||'')}</b><br><span class="muted">"${esc((it.quote||'').slice(0,60))}"</span><br>${esc(it.why||'')}<br><button class="btn ghost mini" style="margin-top:4px" onclick='saveFallacyCard(${JSON.stringify(it.name||'')},${JSON.stringify(it.why||'')},${JSON.stringify((it.quote||'').slice(0,80))})'>存为批判性思维卡</button></div>`).join(''));
+    }catch(e){document.getElementById('assistOut').lastChild.remove();pushMsg('ai','出错：'+esc(e.message));}
+    return;
+  }
   pushMsg('user',esc(sel.slice(0,80))+(sel.length>80?'…':''));
   if(!hasAI()){pushMsg('ai','未接入大模型。解释/拆逻辑需在「设置」填 API。<br>本地仍可用：<b>存概念/标论据/找类比/复习</b>。');return}
   pushMsg('ai','<span class="muted">思考中…</span>');
@@ -552,9 +603,29 @@ async function selAct(act){
     if(act==='explain')pushMsg('ai','<div style="border-top:1px solid var(--line);padding-top:8px;margin-top:6px"><b>🧭 检测理解：</b>请用你自己的话复述这段的核心。（在下方追问框回答）</div>');
   }catch(e){document.getElementById('assistOut').lastChild.remove();pushMsg('ai','出错：'+esc(e.message));}
 }
+let _feyn=null;
+async function feynmanTurn(q){
+  if(!hasAI()){_feyn=null;pushMsg('ai','费曼模式需接入大模型。');return}
+  pushMsg('ai','<span class="muted">…</span>');
+  try{
+    const r=await llm('你在陪用户玩费曼学习法。你是真诚好奇但完全不懂该主题的学生。用户在把下面这段材料讲清楚给你听。\n原文：\n'+_feyn.text+'\n\n规则：针对用户的讲解，只揪住其中"听不明白/有跳跃/含糊/用了没解释的术语"的一个点，用大白话追问一句，帮他发现讲不清的地方。若用户已把核心讲清楚且逻辑自洽，则回复以【PASS】开头，后跟一句鼓励并给出掌握层级(能复述/能应用/能评价)。中文，简短。','我的讲解：'+q);
+    document.getElementById('assistOut').lastChild.remove();
+    const passed=/PASS/i.test(r);
+    pushMsg('ai',mdlite(r.replace(/【?\s*PASS\s*】?/i,'✅ ')));
+    if(passed){const t=_feyn.text;_feyn=null;award(15,'费曼讲通');
+      S.cards.push(newCard('用自己的话讲清：「'+t.slice(0,40)+(t.length>40?'…':'')+'」','（费曼讲解已通过）',{type:'feynman'}));
+      save();updateRevBadge();
+      pushMsg('ai','<div style="color:var(--acc2)">🎉 讲通了！+15 XP，已存一张费曼卡巩固。</div>');}
+  }catch(e){document.getElementById('assistOut').lastChild.remove();pushMsg('ai','出错：'+esc(e.message))}
+}
+function saveFallacyCard(name,why,quote){
+  S.cards.push(newCard('下面这段涉及什么认知偏误/逻辑谬误？为什么？\n「'+quote+'」','【'+name+'】'+why,{type:'fallacy'}));
+  save();award(5,'批判性思维');toast('已存批判性思维卡');updateRevBadge();
+}
 async function ask(){
   const inp=document.getElementById('askInput');const q=inp.value.trim();if(!q)return;inp.value='';
   pushMsg('user',esc(q));
+  if(_feyn)return feynmanTurn(q);
   if(!hasAI()){pushMsg('ai','（本地模式）已记录你的回答。接入大模型可获得针对性反馈与评分。');S.qa.push({id:uid(),q,t:now()});save();return}
   pushMsg('ai','<span class="muted">…</span>');
   try{const ctx=S.curSel?('相关原文：'+S.curSel.slice(0,500)+'\n\n'):'';
