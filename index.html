@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI 阅读教练 · 理解-记忆-关联-复习</title>
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="阅读教练" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0f1115" />
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Crect width='180' height='180' rx='40' fill='%230f1115'/%3E%3Ctext x='90' y='120' font-size='90' text-anchor='middle'%3E📖%3C/text%3E%3C/svg%3E" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --txt:#e6e9ef; --sub:#9aa4b2; --acc:#6ea8fe; --acc2:#7dd3a0;
+    --warn:#f0b429; --danger:#f06a6a; --chip:#232833;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);height:100vh;overflow:hidden}
+  button{font-family:inherit;cursor:pointer}
+  .app{display:flex;height:100vh}
+  /* sidebar */
+  .side{width:200px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;flex-shrink:0}
+  .logo{padding:18px 16px;font-weight:700;font-size:15px;border-bottom:1px solid var(--line)}
+  .logo small{display:block;color:var(--sub);font-weight:400;font-size:11px;margin-top:4px}
+  .nav{flex:1;padding:8px}
+  .nav button{width:100%;text-align:left;background:none;border:none;color:var(--sub);padding:10px 12px;border-radius:8px;font-size:14px;margin-bottom:2px}
+  .nav button:hover{background:var(--panel2);color:var(--txt)}
+  .nav button.on{background:var(--acc);color:#0b1220;font-weight:600}
+  .side .foot{padding:10px;border-top:1px solid var(--line);font-size:11px;color:var(--sub)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--danger);margin-right:6px}
+  .dot.ok{background:var(--acc2)}
+  /* main */
+  .main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+  .page{flex:1;overflow:auto;padding:22px 28px;display:none}
+  .page.on{display:block}
+  h2.title{margin:0 0 4px;font-size:20px}
+  .desc{color:var(--sub);font-size:13px;margin-bottom:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .row{display:flex;gap:12px}
+  .col{flex:1}
+  label{display:block;font-size:12px;color:var(--sub);margin:10px 0 4px}
+  input,textarea,select{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit}
+  textarea{resize:vertical;line-height:1.6}
+  .btn{background:var(--acc);color:#0b1220;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600}
+  .btn:hover{filter:brightness(1.08)}
+  .btn.ghost{background:var(--chip);color:var(--txt)}
+  .btn.mini{padding:5px 10px;font-size:12px}
+  .btn.danger{background:var(--danger);color:#fff}
+  .chip{display:inline-block;background:var(--chip);color:var(--sub);border-radius:999px;padding:3px 10px;font-size:11px;margin:2px 4px 2px 0}
+  .chip.acc{background:rgba(110,168,254,.15);color:var(--acc)}
+  .chip.g{background:rgba(125,211,160,.15);color:var(--acc2)}
+  .chip.w{background:rgba(240,180,41,.15);color:var(--warn)}
+  .muted{color:var(--sub);font-size:12px}
+  .empty{color:var(--sub);text-align:center;padding:40px;font-size:13px}
+  /* reader */
+  .reader-wrap{display:flex;gap:16px;height:100%}
+  .reader{flex:1.6;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px 24px;overflow:auto;line-height:1.95;font-size:15px;user-select:text}
+  .reader p{margin:0 0 14px}
+  .assist{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;overflow:auto;display:flex;flex-direction:column}
+  .assist .out{flex:1;overflow:auto;font-size:13px;line-height:1.7}
+  .msg{margin-bottom:12px;padding:10px 12px;border-radius:8px}
+  .msg.ai{background:var(--panel2)}
+  .msg.user{background:rgba(110,168,254,.12);text-align:right}
+  .msg .who{font-size:11px;color:var(--sub);margin-bottom:4px}
+  .sel-bar{position:fixed;z-index:50;background:#0b0d12;border:1px solid var(--line);border-radius:10px;padding:6px;display:none;gap:4px;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+  .sel-bar button{background:var(--chip);color:var(--txt);border:none;border-radius:6px;padding:6px 10px;font-size:12px}
+  .sel-bar button:hover{background:var(--acc);color:#0b1220}
+  /* list items */
+  .item{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+  .item h4{margin:0 0 6px;font-size:14px}
+  .item .meta{font-size:11px;color:var(--sub)}
+  .align{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}
+  .align td{padding:6px 8px;border:1px solid var(--line)}
+  .align .arrow{text-align:center;color:var(--acc);width:40px}
+  .scorebar{height:6px;background:var(--panel2);border-radius:4px;overflow:hidden;margin:6px 0}
+  .scorebar>i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),var(--acc2))}
+  .tag-strong{color:var(--acc2)} .tag-conflict{color:var(--danger)} .tag-weak{color:var(--sub)}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:100}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;width:560px;max-height:86vh;overflow:auto}
+  .kv{display:flex;font-size:12px;padding:4px 0;border-bottom:1px solid var(--line)}
+  .kv b{width:90px;color:var(--sub);font-weight:400}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#0b0d12;border:1px solid var(--line);padding:10px 18px;border-radius:10px;font-size:13px;z-index:200;display:none}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .stat .n{font-size:26px;font-weight:700}
+  .stat .l{font-size:12px;color:var(--sub);margin-top:4px}
+  .level-badge{font-size:11px;padding:2px 8px;border-radius:6px;background:var(--chip)}
+  .flash{cursor:pointer}
+  .rev-badge{background:var(--danger);color:#fff;border-radius:999px;padding:0 6px;font-size:11px;margin-left:4px;display:none;font-weight:700}
+  .side .search{padding:8px 8px 0}
+  .side .search input{font-size:12px;padding:7px 10px}
+  .hud{padding:10px 12px;border-top:1px solid var(--line);font-size:12px;cursor:pointer}
+  .hud:hover{background:var(--panel2)}
+  .hud .lv{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+  .hud .lv b{color:var(--txt);font-size:13px}
+  .xpbar{height:6px;background:var(--panel2);border-radius:4px;overflow:hidden}
+  .xpbar>i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),var(--acc2))}
+  .flame{color:var(--warn);font-weight:700}
+  @media (max-width:760px){
+    body{overflow:auto;height:auto}
+    .app{flex-direction:column;height:auto;min-height:100vh}
+    .side{width:100%;flex-direction:row;flex-wrap:nowrap;overflow-x:auto;align-items:center;border-right:none;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:60}
+    .logo,.hud,.side .foot{display:none}
+    .side .search{padding:6px;flex:0 0 auto}
+    .side .search input{width:140px}
+    .nav{display:flex;flex:0 0 auto;padding:6px}
+    .nav button{width:auto;white-space:nowrap;margin:0 2px;padding:8px 10px}
+    .main{overflow:visible}
+    .page{padding:14px;overflow:visible}
+    .reader-wrap{flex-direction:column;height:auto;gap:12px}
+    .reader{min-height:46vh}
+    .assist{min-height:40vh}
+    .row{flex-direction:column}
+    .modal{width:92%}
+    .grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
+    .sel-bar{flex-wrap:wrap;max-width:92vw}
+    #graphCanvas{height:60vh !important}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="logo">AI 阅读教练<small>理解 · 记忆 · 关联 · 复习</small></div>
+    <div class="search"><input id="globalSearch" placeholder="🔍 搜索概念/论据/章节…" onkeydown="if(event.key==='Enter')doSearch()" /></div>
+    <nav class="nav" id="nav">
+      <button data-p="read" class="on">📖 阅读</button>
+      <button data-p="kb">🧠 知识库</button>
+      <button data-p="link">🔗 关联</button>
+      <button data-p="graph">🕸️ 图谱</button>
+      <button data-p="review">🔁 复习 <span id="revBadge" class="rev-badge"></span></button>
+      <button data-p="insight">🧭 洞察</button>
+      <button data-p="growth">🎮 成长</button>
+      <button data-p="report">📊 报告</button>
+      <button data-p="set">⚙️ 设置</button>
+    </nav>
+    <div id="hud" class="hud"></div>
+    <div class="foot">
+      <div><span id="aiDot" class="dot"></span><span id="aiState">本地模式</span></div>
+      <div style="margin-top:6px"><span id="cloudDot" class="dot"></span><span id="cloudState">未配置</span></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- READ -->
+    <section class="page on" id="p-read">
+      <div class="reader-wrap">
+        <div class="reader" id="reader">
+          <div class="empty">左上角选择「知识库→导入」或下方直接粘贴一段材料开始阅读。<br><br>
+            <div style="max-width:520px;margin:20px auto 0;text-align:left">
+              <label>标题</label><input id="qkTitle" placeholder="例：抗脆弱 · 第2章" />
+              <label>正文（可粘贴任意文本）</label>
+              <textarea id="qkBody" rows="6" placeholder="粘贴你正在读的内容…"></textarea>
+              <div style="margin-top:10px"><button class="btn" onclick="quickImport()">开始阅读</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="assist">
+          <div style="font-size:12px;color:var(--sub);margin-bottom:8px">💡 选中文段后会出现操作条：解释 / 追问 / 存概念 / 标论据 / 找类比</div>
+          <div class="out" id="assistOut"><div class="muted">辅导输出会显示在这里。</div></div>
+          <div style="margin-top:8px;display:flex;gap:6px">
+            <input id="askInput" placeholder="继续追问…" onkeydown="if(event.key==='Enter')ask()" />
+            <button class="btn mini" onclick="ask()">发送</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- KB -->
+    <section class="page" id="p-kb">
+      <h2 class="title">知识库</h2>
+      <div class="desc">你的书籍、概念、论据都存在本地浏览器。可查看、修改、删除，避免错误信息长期沉淀。</div>
+      <div class="card">
+        <div class="row">
+          <div class="col"><label>导入书籍/材料 · 标题</label><input id="impTitle" placeholder="书名或章节名" /></div>
+        </div>
+        <label>正文（章节之间用一行 <code>---</code> 或 <code>## 标题</code> 分隔可自动切章）</label>
+        <textarea id="impBody" rows="5" placeholder="粘贴正文…"></textarea>
+        <label>从文件导入（.txt / .md / .pdf / .epub）</label><input type="file" id="impFile" accept=".txt,.md,.pdf,.epub" />
+        <div style="margin-top:12px"><button class="btn" onclick="importBook()">保存并开始阅读</button>
+        <button class="btn ghost" onclick="loadDemo()">载入 Demo 数据</button></div>
+      </div>
+      <div class="row">
+        <div class="col card"><h4 style="margin:0 0 10px">📚 书籍</h4><div id="bookList"></div></div>
+        <div class="col card"><h4 style="margin:0 0 10px">🔑 概念</h4><div id="conceptList"></div></div>
+      </div>
+      <div class="card"><h4 style="margin:0 0 10px">⚖️ 论据（结构化）</h4><div id="argList"></div></div>
+    </section>
+
+    <!-- LINK -->
+    <section class="page" id="p-link">
+      <h2 class="title">类比关联</h2>
+      <div class="desc">论据级深度关联：双路召回（语义 + 机制骨架）+ 结构对齐打分。展示依据，你确认后才写入知识网络。</div>
+      <div class="card">
+        <label>输入/选择一个论据文本，查找库内类比</label>
+        <textarea id="linkInput" rows="3" placeholder="粘贴或输入一个论据，例如：反复暴露于小剂量压力会使系统变得更强。"></textarea>
+        <div style="margin-top:10px"><button class="btn" onclick="runAnalogy()">🔍 查找类比</button>
+        <span class="muted" style="margin-left:10px">机制用 → 连接可提升匹配，如「小压力 → 适应 → 更强」</span></div>
+      </div>
+      <div id="analogyResult"></div>
+      <div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h4 style="margin:0">🚨 冲突雷达</h4><button class="btn ghost mini" onclick="scanConflicts()">扫描库内观点冲突</button></div><div id="conflictOut" style="margin-top:10px"><div class="muted">点右上按钮：找出机制相似但结论相反的论据。</div></div></div>
+      <div class="card"><h4 style="margin:0 0 10px">🕸️ 已确认关联</h4><div id="edgeList"></div></div>
+    </section>
+
+    <!-- GRAPH -->
+    <section class="page" id="p-graph">
+      <h2 class="title">知识图谱</h2>
+      <div class="desc">概念(蓝)与论据(绿)为节点，关联为边(红=冲突)。拖动节点/空白平移，滚轮缩放。</div>
+      <div class="card" style="padding:0;overflow:hidden"><canvas id="graphCanvas" style="width:100%;height:70vh;display:block;cursor:grab"></canvas></div>
+    </section>
+
+    <!-- REVIEW -->
+    <section class="page" id="p-review">
+      <h2 class="title">复习</h2>
+      <div class="desc">间隔重复（SM-2 精简版）。优先主动回忆，先自答再看答案。</div>
+      <div class="card" id="reviewArea"></div>
+      <div class="card"><h4 style="margin:0 0 10px">🗂️ 全部卡片</h4><div id="cardList"></div></div>
+    </section>
+
+    <!-- INSIGHT -->
+    <section class="page" id="p-insight">
+      <h2 class="title">洞察</h2>
+      <div class="desc">认知档案 + 多导师辩论：看清你的薄弱点，并让 AI 从不同立场深化理解。</div>
+      <div class="card"><h4 style="margin:0 0 10px">🧠 认知档案</h4><div id="cogProfile"></div>
+        <div style="margin-top:10px"><button class="btn ghost mini" onclick="predictHard()">🔮 预测我可能读不懂的内容（需 AI）</button></div>
+        <div id="predictOut" class="muted" style="margin-top:8px"></div>
+      </div>
+      <div class="card"><h4 style="margin:0 0 10px">⚔️ 多导师辩论</h4>
+        <input id="debateTopic" placeholder="输入一个争议话题，如：压力对成长利大于弊吗？" />
+        <div style="margin-top:8px"><button class="btn" onclick="runDebate()">开始辩论（需 AI）</button></div>
+        <div id="debateOut" style="margin-top:10px"></div>
+      </div>
+    </section>
+
+    <!-- GROWTH -->
+    <section class="page" id="p-growth">
+      <h2 class="title">成长</h2>
+      <div class="desc">这里只奖励「真正理解」：标论据、建关联、复习答对、掌握层级提升，才得经验。刷摘要不加分。</div>
+      <div id="growthBody"></div>
+    </section>
+
+    <!-- REPORT -->
+    <section class="page" id="p-report">
+      <h2 class="title">报告</h2>
+      <div class="desc">沉淀了多少「真正掌握的知识」，而不是生成了多少摘要。</div>
+      <div class="grid" id="statGrid" style="margin-bottom:16px"></div>
+      <div class="card"><h4 style="margin:0 0 10px">掌握层级分布</h4><div id="masteryDist"></div></div>
+      <div class="card"><h4 style="margin:0 0 10px">🗓️ 周期报告</h4>
+        <div style="margin-bottom:10px"><button class="btn ghost mini" onclick="periodReport(7)">近 7 天</button>
+        <button class="btn ghost mini" onclick="periodReport(30)">近 30 天</button></div>
+        <div id="periodOut"><div class="muted">选择时间窗口查看新增知识与掌握变化。</div></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="page" id="p-set">
+      <h2 class="title">设置</h2>
+      <div class="desc">可选接入 OpenAI 兼容大模型（解释/追问/抽结构/评测更强）。不填也能用：类比匹配、复习、知识库走本地算法。Key 仅存本地浏览器。</div>
+      <div class="card">
+        <label>API Base URL</label><input id="cfgBase" placeholder="https://api.openai.com/v1" />
+        <label>API Key</label><input id="cfgKey" type="password" placeholder="sk-..." />
+        <label>模型名</label><input id="cfgModel" placeholder="gpt-4o-mini" />
+        <div style="margin-top:12px"><button class="btn" onclick="saveCfg()">保存</button>
+          <button class="btn ghost" onclick="testCfg()">测试连接</button></div>
+        <div class="muted" id="cfgMsg" style="margin-top:8px"></div>
+      </div>
+      <div class="card">
+        <h4 style="margin:0 0 8px">☁️ 云同步（手机 / 多设备）</h4>
+        <div class="muted" style="margin-bottom:8px">填 Supabase 项目信息并登录后，数据自动云端同步，换设备登录同一账号即可无缝继续。建表 SQL 与部署见交付说明。</div>
+        <label>Supabase URL</label><input id="sbUrl" placeholder="https://xxxx.supabase.co" />
+        <label>Supabase anon key</label><input id="sbKey" type="password" placeholder="eyJhbGciOi..." />
+        <div style="margin-top:8px"><button class="btn ghost mini" onclick="saveSb()">保存连接</button></div>
+        <hr style="border-color:var(--line);margin:14px 0" />
+        <div class="row">
+          <div class="col"><label>邮箱</label><input id="sbEmail" placeholder="you@example.com" /></div>
+          <div class="col"><label>密码</label><input id="sbPass" type="password" placeholder="≥6 位" /></div>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn" onclick="sbLogin()">登录</button>
+          <button class="btn ghost" onclick="sbRegister()">注册</button>
+          <button class="btn ghost" onclick="syncNow()">立即同步</button>
+          <button class="btn ghost" onclick="sbLogout()">退出</button>
+        </div>
+        <div class="muted" id="sbMsg" style="margin-top:8px"></div>
+      </div>
+      <div class="card">
+        <h4 style="margin:0 0 8px">数据</h4>
+        <button class="btn ghost mini" onclick="exportData()">导出全部数据(JSON)</button>
+        <button class="btn ghost mini" onclick="document.getElementById('impData').click()">导入数据</button>
+        <input type="file" id="impData" accept=".json" style="display:none" />
+        <button class="btn danger mini" onclick="wipe()">清空全部</button>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="sel-bar" id="selBar">
+  <button onclick="selAct('explain')">解释</button>
+  <button onclick="selAct('breakdown')">拆逻辑</button>
+  <button onclick="selAct('concept')">存概念</button>
+  <button onclick="selAct('arg')">标论据</button>
+  <button onclick="selAct('analogy')">找类比</button>
+</div>
+<div class="modal-bg" id="modalBg"><div class="modal" id="modal"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============ state & storage ============ */
+const KEY='air_state_v1';
+let S=load();
+function load(){try{return JSON.parse(localStorage.getItem(KEY))||seed()}catch(e){return seed()}}
+function seed(){return{settings:{base:'',key:'',model:''},books:[],concepts:[],args:[],edges:[],cards:[],qa:[],gm:{xp:0,streak:0,longest:0,lastDay:'',ach:[],day:null},curBook:null,curSel:''}}
+function save(){S.updatedAt=now();localStorage.setItem(KEY,JSON.stringify(S));scheduleSync()}
+const uid=()=>Math.random().toString(36).slice(2,9);
+const now=()=>Date.now();
+function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',2200)}
+
+/* ============ nav ============ */
+document.getElementById('nav').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('.nav button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.getElementById('p-'+b.dataset.p).classList.add('on');
+  render(b.dataset.p);
+});
+
+/* ============ LLM ============ */
+function hasAI(){return S.settings.base&&S.settings.key&&S.settings.model}
+async function llm(sys,user,json){
+  if(!hasAI())throw new Error('no-ai');
+  const r=await fetch(S.settings.base.replace(/\/$/,'')+'/chat/completions',{
+    method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.settings.key},
+    body:JSON.stringify({model:S.settings.model,temperature:0.3,
+      messages:[{role:'system',content:sys},{role:'user',content:user}],
+      ...(json?{response_format:{type:'json_object'}}:{})})
+  });
+  if(!r.ok)throw new Error('HTTP '+r.status+' '+await r.text());
+  const d=await r.json();return d.choices[0].message.content;
+}
+
+/* ============ text similarity (char bigram jaccard, CN friendly) ============ */
+function bigrams(t){t=(t||'').toLowerCase().replace(/[\s\p{P}]/gu,'');const s=new Set();for(let i=0;i<t.length-1;i++)s.add(t.slice(i,i+2));if(t.length===1)s.add(t);return s}
+function jac(a,b){if(!a.size||!b.size)return 0;let i=0;a.forEach(x=>{if(b.has(x))i++});return i/(a.size+b.size-i)}
+function sim(a,b){return jac(bigrams(a),bigrams(b))}
+/* mechanism skeleton: split by arrows */
+function skeleton(t){return (t||'').split(/→|->|➜|、|;|；/).map(s=>s.trim()).filter(Boolean)}
+
+/* ============ analogy scoring ============ */
+function scoreAnalogy(q,cand){
+  // q,cand: {text, mechanism, domain, polarity}
+  const semantic=sim(q.text,cand.text);
+  const qs=skeleton(q.mechanism||q.text), cs=skeleton(cand.mechanism||cand.text);
+  // mechanism isomorphism: step-count closeness + mean pairwise best sim
+  let iso=0;
+  if(qs.length&&cs.length){
+    const cntClose=1-Math.abs(qs.length-cs.length)/Math.max(qs.length,cs.length);
+    let acc=0;qs.forEach(a=>{let best=0;cs.forEach(b=>best=Math.max(best,sim(a,b)));acc+=best});
+    iso=0.5*cntClose+0.5*(acc/qs.length);
+  }
+  const roleMap=iso; // proxy
+  const conc=(q.polarity===cand.polarity)?1:0.4; // reversed still valuable
+  const domainDist=(q.domain&&cand.domain&&q.domain!==cand.domain)?1:0.3; // cross-domain bonus
+  const score=0.34*iso+0.20*roleMap+0.12*conc+0.14*domainDist+0.20*semantic;
+  let tag='weak';
+  if(score>=0.55&&conc>=0.9)tag='strong';
+  else if(iso>=0.5&&conc<0.9)tag='conflict';
+  return {score,dims:{iso,roleMap,conc,domainDist,semantic},tag};
+}
+
+/* ============ quick / import ============ */
+function splitChapters(title,body){
+  let parts;
+  if(/^\s*##\s+/m.test(body)) parts=body.split(/^\s*##\s+/m).filter(x=>x.trim()).map(x=>{const l=x.split('\n');return{title:l.shift().trim(),content:l.join('\n').trim()}});
+  else if(/^\s*---\s*$/m.test(body)) parts=body.split(/^\s*---\s*$/m).filter(x=>x.trim()).map((x,i)=>({title:title+' · '+(i+1),content:x.trim()}));
+  else parts=[{title,content:body.trim()}];
+  return parts.map(p=>({id:uid(),...p}));
+}
+function quickImport(){
+  const t=document.getElementById('qkTitle').value.trim()||'未命名';
+  const b=document.getElementById('qkBody').value.trim();
+  if(!b)return toast('先粘贴正文');
+  const bk={id:uid(),title:t,chapters:splitChapters(t,b),curChap:0};
+  S.books.push(bk);S.curBook=bk.id;save();openReader();render('kb');
+}
+function importBook(){
+  const t=document.getElementById('impTitle').value.trim()||'未命名';
+  const b=document.getElementById('impBody').value.trim();
+  if(!b)return toast('先粘贴正文');
+  const bk={id:uid(),title:t,chapters:splitChapters(t,b),curChap:0};
+  S.books.push(bk);S.curBook=bk.id;save();openReader();
+  document.querySelector('.nav button[data-p=read]').click();
+}
+document.getElementById('impFile').addEventListener('change',async e=>{
+  const f=e.target.files[0];if(!f)return;
+  const name=f.name.replace(/\.[^.]+$/,'');
+  if(!document.getElementById('impTitle').value)document.getElementById('impTitle').value=name;
+  const ext=f.name.split('.').pop().toLowerCase();
+  toast('解析中…');
+  try{
+    let text='';
+    if(ext==='pdf')text=await parsePDF(f);
+    else if(ext==='epub')text=await parseEPUB(f);
+    else text=await f.text();
+    document.getElementById('impBody').value=text;
+    toast('已解析约 '+text.length+' 字，可编辑后保存');
+  }catch(x){toast('解析失败：'+x.message)}
+});
+async function parsePDF(f){
+  if(!window.pdfjsLib)throw new Error('pdf.js 未加载');
+  const buf=await f.arrayBuffer();const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  let out='';for(let i=1;i<=pdf.numPages;i++){const pg=await pdf.getPage(i);const tc=await pg.getTextContent();
+    const s=tc.items.map(it=>it.str).join(' ').replace(/\s+/g,' ').trim();if(s)out+='## 第'+i+'页\n'+s+'\n\n';}
+  return out||'（未提取到文本，可能是扫描版 PDF）';
+}
+async function parseEPUB(f){
+  if(!window.JSZip)throw new Error('JSZip 未加载');
+  const zip=await JSZip.loadAsync(f);
+  const names=Object.keys(zip.files).filter(n=>/\.x?html?$/i.test(n)).sort();
+  let out='';for(const n of names){const html=await zip.files[n].async('string');
+    const txt=html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/&[a-z]+;/g,' ').replace(/\s+/g,' ').trim();
+    if(txt.length>60)out+='## '+n.split('/').pop().replace(/\.\w+$/,'')+'\n'+txt+'\n\n';}
+  return out||'（未提取到章节文本）';
+}
+document.getElementById('impData').addEventListener('change',e=>{
+  const f=e.target.files[0];if(!f)return;const r=new FileReader();
+  r.onload=()=>{try{S=JSON.parse(r.result);save();toast('已导入');render('kb')}catch(x){toast('文件无效')}};r.readAsText(f);
+});
+
+/* ============ reader ============ */
+function curBook(){return S.books.find(b=>b.id===S.curBook)}
+function openReader(){
+  const bk=curBook();const rd=document.getElementById('reader');
+  if(!bk){return}
+  ensureGm();if(S.gm.lastDay!==today())award(3,'阅读打卡');
+  const ch=bk.chapters[bk.curChap||0];
+  let nav='';
+  if(bk.chapters.length>1){nav='<div style="margin-bottom:14px">'+bk.chapters.map((c,i)=>`<span class="chip ${i===(bk.curChap||0)?'acc':''}" style="cursor:pointer" onclick="gotoChap(${i})">${c.title}</span>`).join('')+'</div>'}
+  const paras=ch.content.split(/\n+/).filter(x=>x.trim()).map(p=>'<p>'+esc(p)+'</p>').join('');
+  rd.innerHTML=`<div style="font-size:12px;color:var(--sub);margin-bottom:6px">${esc(bk.title)}</div><h3 style="margin:0 0 14px">${esc(ch.title)}</h3>${nav}${paras}`;
+}
+function gotoChap(i){const bk=curBook();bk.curChap=i;save();openReader()}
+function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+
+/* selection bar */
+const selBar=document.getElementById('selBar');
+document.getElementById('reader').addEventListener('mouseup',()=>{
+  const sel=window.getSelection();const t=sel.toString().trim();
+  if(t.length>1){S.curSel=t;const rc=sel.getRangeAt(0).getBoundingClientRect();
+    selBar.style.display='flex';selBar.style.left=Math.max(8,rc.left)+'px';selBar.style.top=(rc.top-46)+'px';
+  }else selBar.style.display='none';
+});
+document.addEventListener('mousedown',e=>{if(!selBar.contains(e.target)&&e.target.closest('#reader')===null)selBar.style.display='none'});
+
+/* ============ assist output ============ */
+function pushMsg(who,html){
+  const out=document.getElementById('assistOut');
+  if(out.querySelector('.muted'))out.innerHTML='';
+  out.innerHTML+=`<div class="msg ${who}"><div class="who">${who==='ai'?'导师':'我'}</div>${html}</div>`;
+  out.scrollTop=out.scrollHeight;
+}
+async function selAct(act){
+  selBar.style.display='none';
+  const sel=S.curSel;if(!sel)return;
+  if(act==='concept'){addConcept(sel);return}
+  if(act==='arg'){openArgModal(sel);return}
+  if(act==='analogy'){document.querySelector('.nav button[data-p=link]').click();document.getElementById('linkInput').value=sel;runAnalogy();return}
+  pushMsg('user',esc(sel.slice(0,80))+(sel.length>80?'…':''));
+  if(!hasAI()){pushMsg('ai','未接入大模型。解释/拆逻辑需在「设置」填 API。<br>本地仍可用：<b>存概念/标论据/找类比/复习</b>。');return}
+  pushMsg('ai','<span class="muted">思考中…</span>');
+  try{
+    let sys,user;
+    if(act==='explain'){sys='你是阅读理解导师。用通俗语言解释，给一个例子和一个类比，指出常见误解。简洁，中文。';user='解释这段：\n'+sel;}
+    else{sys='你是逻辑拆解导师。提取【前提】【推理过程】【结论】，指出论证是否有漏洞。中文，用短标题。';user='拆解这段的论证：\n'+sel;}
+    const r=await llm(sys,user);
+    const out=document.getElementById('assistOut');out.lastChild.remove();
+    pushMsg('ai',mdlite(r));
+    // Socratic follow-up
+    if(act==='explain')pushMsg('ai','<div style="border-top:1px solid var(--line);padding-top:8px;margin-top:6px"><b>🧭 检测理解：</b>请用你自己的话复述这段的核心。（在下方追问框回答）</div>');
+  }catch(e){document.getElementById('assistOut').lastChild.remove();pushMsg('ai','出错：'+esc(e.message));}
+}
+async function ask(){
+  const inp=document.getElementById('askInput');const q=inp.value.trim();if(!q)return;inp.value='';
+  pushMsg('user',esc(q));
+  if(!hasAI()){pushMsg('ai','（本地模式）已记录你的回答。接入大模型可获得针对性反馈与评分。');S.qa.push({id:uid(),q,t:now()});save();return}
+  pushMsg('ai','<span class="muted">…</span>');
+  try{const ctx=S.curSel?('相关原文：'+S.curSel.slice(0,500)+'\n\n'):'';
+    const r=await llm('你是苏格拉底式阅读教练。若用户在复述/回答，请判断掌握层级(未接触/初步理解/能复述/能应用/能评价)并简短点评+追问一句。若是提问则解答。中文。',ctx+'用户：'+q);
+    document.getElementById('assistOut').lastChild.remove();pushMsg('ai',mdlite(r));
+    S.qa.push({id:uid(),q,a:r,t:now()});save();
+  }catch(e){document.getElementById('assistOut').lastChild.remove();pushMsg('ai','出错：'+esc(e.message))}
+}
+function mdlite(s){return esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>')}
+
+/* ============ concepts ============ */
+function addConcept(name){
+  const c={id:uid(),name:name.slice(0,60),note:'',source:srcRef(),mastery:'初步理解',t:now()};
+  S.concepts.push(c);
+  S.cards.push(newCard('概念：'+c.name+'？（请解释）',c.name,{type:'concept',refId:c.id}));
+  save();award(5,'新概念');
+  if(hasAI())genConceptCards(c);
+}
+async function genConceptCards(c){
+  try{const ctx=S.curSel?('\n原文参考：'+S.curSel.slice(0,400)):'';
+    const r=await llm('针对概念生成3张不同角度问答卡(定义/应用/反例或对比)，每张只测一个点。返回JSON：{cards:[{front,back}]}。中文。','概念：'+c.name+ctx,true);
+    const j=JSON.parse(r);let n=0;(j.cards||[]).slice(0,3).forEach(k=>{if(k.front){S.cards.push(newCard(k.front,k.back||'',{type:'concept',refId:c.id}));n++}});
+    if(n){save();toast('已为「'+c.name+'」生成 '+n+' 张多角度卡');updateRevBadge()}
+  }catch(e){}
+}
+function srcRef(){const b=curBook();if(!b)return'';const ch=b.chapters[b.curChap||0];return b.title+' · '+ch.title}
+
+/* ============ arguments (structured) ============ */
+function openArgModal(text,existing){
+  const a=existing||{text,claim:'',mechanism:'',domain:'',entities:'',polarity:'support',source:srcRef()};
+  showModal(`<h3 style="margin:0 0 12px">论据结构化</h3>
+    <label>论据原文</label><textarea id="m_text" rows="2">${esc(a.text)}</textarea>
+    <label>支持的结论 claim</label><input id="m_claim" value="${esc(a.claim)}"/>
+    <label>作用机制/因果链（用 → 连接，如 小压力 → 适应 → 更强）</label><input id="m_mech" value="${esc(a.mechanism)}"/>
+    <div class="row"><div class="col"><label>领域</label><input id="m_dom" value="${esc(a.domain)}" placeholder="生物/经济/心理…"/></div>
+    <div class="col"><label>极性</label><select id="m_pol"><option value="support"${a.polarity==='support'?' selected':''}>正向支持</option><option value="counter"${a.polarity==='counter'?' selected':''}>反例</option></select></div></div>
+    <label>关键角色 entities（逗号分隔：施加者,受体,结果）</label><input id="m_ent" value="${esc(a.entities||'')}"/>
+    <div style="margin-top:14px;display:flex;gap:8px">
+      ${hasAI()?'<button class="btn ghost" onclick="autoStruct()">🤖 AI 自动抽取</button>':''}
+      <button class="btn" onclick="saveArg('${existing?existing.id:''}')">保存论据</button>
+      <button class="btn ghost" onclick="closeModal()">取消</button>
+    </div>`);
+}
+async function autoStruct(){
+  const text=document.getElementById('m_text').value;
+  toast('抽取中…');
+  try{const r=await llm('把论据抽成JSON：{claim,mechanism(用 → 连接的因果链),domain(领域词),entities(逗号分隔角色),polarity(support/counter)}。中文。','论据：'+text,true);
+    const j=JSON.parse(r);
+    document.getElementById('m_claim').value=j.claim||'';
+    document.getElementById('m_mech').value=j.mechanism||'';
+    document.getElementById('m_dom').value=j.domain||'';
+    document.getElementById('m_ent').value=Array.isArray(j.entities)?j.entities.join(','):(j.entities||'');
+    document.getElementById('m_pol').value=j.polarity==='counter'?'counter':'support';
+  }catch(e){toast('抽取失败：'+e.message)}
+}
+function saveArg(id){
+  const o={text:document.getElementById('m_text').value.trim(),claim:document.getElementById('m_claim').value.trim(),
+    mechanism:document.getElementById('m_mech').value.trim(),domain:document.getElementById('m_dom').value.trim(),
+    entities:document.getElementById('m_ent').value.trim(),polarity:document.getElementById('m_pol').value,source:srcRef()};
+  if(!o.text)return toast('原文不能为空');
+  if(id){const a=S.args.find(x=>x.id===id);Object.assign(a,o)}
+  else{o.id=uid();o.t=now();S.args.push(o)}
+  save();closeModal();if(!id)award(10,'新论据');toast('已保存论据');render('kb');
+}
+
+/* ============ analogy run ============ */
+function runAnalogy(){
+  const text=document.getElementById('linkInput').value.trim();
+  if(!text)return toast('先输入论据');
+  const q={text,mechanism:skeleton(text).length>1?text:'',domain:'',polarity:'support'};
+  // if this text matches a stored arg, use its structure
+  const matchArg=S.args.find(a=>a.text===text);
+  if(matchArg)Object.assign(q,{mechanism:matchArg.mechanism,domain:matchArg.domain,polarity:matchArg.polarity});
+  const pool=S.args.filter(a=>a.text!==text);
+  if(!pool.length){document.getElementById('analogyResult').innerHTML='<div class="empty">知识库还没有其他论据。先在阅读页「标论据」积累几条，再来找类比。</div>';return}
+  // dual-route recall then score
+  const scored=pool.map(a=>({a,...scoreAnalogy(q,a)})).sort((x,y)=>y.score-x.score);
+  const top=scored.filter(s=>s.score>0.15).slice(0,5);
+  if(!top.length){document.getElementById('analogyResult').innerHTML='<div class="empty">未找到足够相似的论据。</div>';return}
+  document.getElementById('analogyResult').innerHTML=top.map(s=>analogyCard(q,s)).join('');
+}
+function analogyCard(q,s){
+  const a=s.a;const pct=Math.round(s.score*100);
+  const tagTxt={strong:'🟢 强类比',conflict:'🔴 疑似冲突/反例',weak:'⚪ 弱关联'}[s.tag];
+  const qs=skeleton(q.mechanism||q.text),cs=skeleton(a.mechanism||a.text);
+  const rows=Math.max(qs.length,cs.length);let table='';
+  if(rows>1){table='<table class="align"><tr><td><b>当前论据</b></td><td class="arrow">⇄</td><td><b>库内论据</b></td></tr>';
+    for(let i=0;i<rows;i++)table+=`<tr><td>${esc(qs[i]||'—')}</td><td class="arrow">⇄</td><td>${esc(cs[i]||'—')}</td></tr>`;table+='</table>'}
+  const dm=s.dims;
+  return `<div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <b class="tag-${s.tag}">${tagTxt} · 强度 ${pct}%</b>
+      <span class="muted">${esc(a.source||'')}</span>
+    </div>
+    <div class="scorebar"><i style="width:${pct}%"></i></div>
+    <div style="font-size:13px;margin:8px 0">${esc(a.text)}</div>
+    ${a.domain?`<span class="chip">领域：${esc(a.domain)}</span>`:''}
+    ${a.claim?`<span class="chip">结论：${esc(a.claim)}</span>`:''}
+    ${table}
+    <div class="muted" style="margin:6px 0">依据 · 机制同构 ${(dm.iso*100|0)}% · 角色映射 ${(dm.roleMap*100|0)}% · 结论 ${dm.conc>=.9?'一致':'相反'} · 领域 ${dm.domainDist>=.9?'跨域(启发高)':'同域'} · 语义 ${(dm.semantic*100|0)}%</div>
+    <div style="display:flex;gap:6px;margin-top:4px">
+      <button class="btn mini" onclick='confirmEdge(${JSON.stringify(q.text)},${JSON.stringify(a.id)},"${s.tag}")'>✓ 采纳关联</button>
+      <button class="btn ghost mini" onclick="this.closest('.card').style.opacity=.4">✗ 不太像</button>
+    </div></div>`;
+}
+function confirmEdge(qText,aId,tag){
+  const a=S.args.find(x=>x.id===aId);
+  const type=tag==='conflict'?'冲突':'类比';
+  S.edges.push({id:uid(),type,fromText:qText,to:aId,toText:a.text,reason:'机制骨架对齐',t:now()});
+  // reinforce learning: create review card
+  S.cards.push(newCard(`「${qText.slice(0,30)}…」与「${a.text.slice(0,30)}…」的共同结构是什么？差异在哪？`,'类比关系',{type:'edge'}));
+  save();award(15,'确立关联');toast('已写入知识网络+复习卡');render('link');
+}
+
+/* ============ cards / spaced repetition (SM-2 lite) ============ */
+function newCard(front,back,meta){return{id:uid(),front,back,ease:2.5,interval:0,reps:0,due:now(),meta:meta||{},t:now()}}
+function dueCards(){return S.cards.filter(c=>c.due<=now()).sort((a,b)=>a.due-b.due)}
+function renderReview(){
+  const area=document.getElementById('reviewArea');const due=dueCards();
+  if(!due.length){area.innerHTML='<div class="empty">🎉 暂无到期卡片。去阅读页积累知识吧。</div>';return renderCardList()}
+  const c=due[0];
+  area.innerHTML=`<div class="muted">待复习 ${due.length} 张 · 先自己回忆，再翻面</div>
+    <div style="font-size:16px;margin:14px 0;padding:14px;background:var(--panel2);border-radius:10px">${esc(c.front)}</div>
+    <div id="ansBox" style="display:none;padding:12px;background:rgba(125,211,160,.08);border-radius:10px;margin-bottom:10px"><b>参考：</b>${esc(c.back)}</div>
+    <button class="btn ghost" onclick="document.getElementById('ansBox').style.display='block'">翻面看答案</button>
+    <div style="margin-top:12px"><span class="muted">回忆质量：</span>
+      <button class="btn mini danger" onclick="grade('${c.id}',0)">不懂</button>
+      <button class="btn mini ghost" onclick="grade('${c.id}',3)">模糊</button>
+      <button class="btn mini" onclick="grade('${c.id}',5)">懂了</button>
+    </div>`;
+  renderCardList();
+}
+function grade(id,q){
+  const c=S.cards.find(x=>x.id===id);if(!c)return;
+  // SM-2 lite
+  if(q<3){c.reps=0;c.interval=0;}
+  else{c.reps++;c.interval=c.reps===1?1:c.reps===2?3:Math.round(c.interval*c.ease);
+    c.ease=Math.max(1.3,c.ease+(0.1-(5-q)*(0.08+(5-q)*0.02)));}
+  c.due=now()+Math.max(1,c.interval)*(q<3?60*1000:24*3600*1000); // fail: 1min, else N days
+  ensureGm();const t=today();if(!S.gm.day||S.gm.day.d!==t)S.gm.day={d:t,rev:0};S.gm.day.rev++;
+  save();award(q>=5?10:q>=3?5:2,'复习');renderReview();
+}
+function renderCardList(){
+  const el=document.getElementById('cardList');
+  el.innerHTML=S.cards.length?S.cards.map(c=>`<div class="item"><h4>${esc(c.front)}</h4>
+    <div class="meta">复习 ${c.reps} 次 · 间隔 ${c.interval}天 · 到期 ${new Date(c.due).toLocaleDateString()}
+    <button class="btn ghost mini" style="float:right" onclick="del('cards','${c.id}');renderReview()">删</button></div></div>`).join(''):'<div class="empty">暂无卡片</div>';
+}
+
+/* ============ render lists ============ */
+function del(coll,id){S[coll]=S[coll].filter(x=>x.id!==id);save();render(curPage())}
+function curPage(){const b=document.querySelector('.nav button.on');return b?b.dataset.p:'read'}
+function render(p){
+  cancelAnimationFrame(_graphRAF);updateRevBadge();updateHUD();
+  if(p==='read')openReader();
+  if(p==='graph')initGraph();
+  if(p==='insight')renderCog();
+  if(p==='growth')renderGrowth();
+  if(p==='kb'){
+    document.getElementById('bookList').innerHTML=S.books.length?S.books.map(b=>`<div class="item"><h4>${esc(b.title)} <span class="chip">${b.chapters.length}章</span></h4>
+      <div class="meta"><button class="btn mini" onclick="S.curBook='${b.id}';save();document.querySelector('.nav button[data-p=read]').click()">阅读</button>
+      <button class="btn ghost mini" onclick="exportBookMD('${b.id}')">导出MD</button>
+      <button class="btn ghost mini" onclick="del('books','${b.id}')">删</button></div></div>`).join(''):'<div class="empty">还没有书</div>';
+    document.getElementById('conceptList').innerHTML=S.concepts.length?S.concepts.map(c=>`<div class="item"><h4>${esc(c.name)}</h4>
+      <div class="meta"><select onchange="setMastery('${c.id}',this.value)" style="width:auto;padding:2px 6px;font-size:11px">${['未接触','初步理解','能复述','能应用','能评价'].map(l=>`<option${l===c.mastery?' selected':''}>${l}</option>`).join('')}</select> ${esc(c.source||'')}
+      <button class="btn ghost mini" style="float:right" onclick="del('concepts','${c.id}')">删</button></div></div>`).join(''):'<div class="empty">选中文本→存概念</div>';
+    document.getElementById('argList').innerHTML=S.args.length?S.args.map(a=>`<div class="item"><h4>${esc(a.text)}</h4>
+      <div class="meta">${a.mechanism?'机制: '+esc(a.mechanism)+' · ':''}${a.domain?'领域: '+esc(a.domain)+' · ':''}${a.polarity==='counter'?'反例':'支持'}
+      <button class="btn ghost mini" onclick="editArg('${a.id}')">编辑</button>
+      <button class="btn ghost mini" onclick="del('args','${a.id}')">删</button></div></div>`).join(''):'<div class="empty">阅读时选中文本→标论据</div>';
+  }
+  if(p==='link'){
+    document.getElementById('edgeList').innerHTML=S.edges.length?S.edges.map(e=>`<div class="item"><h4><span class="chip ${e.type==='冲突'?'w':'g'}">${e.type}</span></h4>
+      <div class="meta">${esc((e.fromText||'').slice(0,40))} ⇄ ${esc((e.toText||'').slice(0,40))}
+      <button class="btn ghost mini" style="float:right" onclick="del('edges','${e.id}')">删</button></div></div>`).join(''):'<div class="empty">还没有确认的关联</div>';
+  }
+  if(p==='review')renderReview();
+  if(p==='report')renderReport();
+  if(p==='set'){document.getElementById('cfgBase').value=S.settings.base;document.getElementById('cfgKey').value=S.settings.key;document.getElementById('cfgModel').value=S.settings.model;
+    const c=sbCfg();document.getElementById('sbUrl').value=c.url||'';document.getElementById('sbKey').value=c.key||'';cloudBadge()}
+  aiBadge();
+}
+function editArg(id){openArgModal(null,S.args.find(a=>a.id===id))}
+
+function renderReport(){
+  const mastered=S.concepts.filter(c=>['能应用','能评价'].includes(c.mastery)).length;
+  const stats=[['📚',S.books.length,'书籍'],['🔑',S.concepts.length,'概念'],['⚖️',S.args.length,'论据'],['🔗',S.edges.length,'关联'],['🗂️',S.cards.length,'复习卡'],['✅',mastered,'达应用层']];
+  document.getElementById('statGrid').innerHTML=stats.map(s=>`<div class="stat"><div class="n">${s[1]}</div><div class="l">${s[0]} ${s[2]}</div></div>`).join('');
+  const levels=['未接触','初步理解','能复述','能应用','能评价'];
+  const dist=levels.map(l=>[l,S.concepts.filter(c=>c.mastery===l).length]);
+  const max=Math.max(1,...dist.map(d=>d[1]));
+  document.getElementById('masteryDist').innerHTML=dist.map(d=>`<div style="margin:6px 0"><span class="muted" style="display:inline-block;width:70px">${d[0]}</span>
+    <span class="scorebar" style="display:inline-block;width:60%;vertical-align:middle"><i style="width:${d[1]/max*100}%"></i></span> ${d[1]}</div>`).join('');
+}
+
+/* ============ settings ============ */
+function saveCfg(){S.settings={base:cfgBase.value.trim(),key:cfgKey.value.trim(),model:cfgModel.value.trim()};save();aiBadge();toast('已保存')}
+async function testCfg(){saveCfg();document.getElementById('cfgMsg').textContent='测试中…';
+  try{const r=await llm('reply OK','ping');document.getElementById('cfgMsg').textContent='✅ 连接成功：'+r.slice(0,40)}
+  catch(e){document.getElementById('cfgMsg').textContent='❌ '+e.message}}
+function aiBadge(){const on=hasAI();document.getElementById('aiDot').className='dot'+(on?' ok':'');document.getElementById('aiState').textContent=on?('已接入 '+S.settings.model):'本地模式'}
+function exportData(){const b=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='ai-reading-coach-data.json';a.click()}
+function wipe(){if(confirm('确认清空全部数据？不可恢复')){S=seed();save();toast('已清空');render('kb')}}
+
+/* ============ modal ============ */
+function showModal(html){document.getElementById('modal').innerHTML=html;document.getElementById('modalBg').style.display='flex'}
+function closeModal(){document.getElementById('modalBg').style.display='none'}
+document.getElementById('modalBg').addEventListener('click',e=>{if(e.target.id==='modalBg')closeModal()});
+
+/* ============ review badge ============ */
+function updateRevBadge(){const el=gid('revBadge');if(!el)return;const n=dueCards().length;el.textContent=n||'';el.style.display=n?'inline-block':'none'}
+
+/* ============ global search ============ */
+function doSearch(){
+  const q=gid('globalSearch').value.trim();if(!q)return;const qb=bigrams(q);const res=[];
+  S.concepts.forEach(c=>res.push({t:'概念',txt:c.name,s:jac(qb,bigrams(c.name))}));
+  S.args.forEach(a=>res.push({t:'论据',txt:a.text,s:Math.max(jac(qb,bigrams(a.text)),jac(qb,bigrams(a.mechanism))*0.9)}));
+  S.books.forEach(b=>b.chapters.forEach(ch=>res.push({t:'章节',txt:b.title+' · '+ch.title,s:Math.max(jac(qb,bigrams(ch.title)),jac(qb,bigrams(ch.content))*0.7)})));
+  S.qa.forEach(x=>res.push({t:'问答',txt:x.q,s:jac(qb,bigrams(x.q))}));
+  const top=res.filter(r=>r.s>0.03).sort((a,b)=>b.s-a.s).slice(0,20);
+  showModal('<h3 style="margin:0 0 12px">搜索：'+esc(q)+'</h3>'+(top.length?top.map(r=>`<div class="item"><span class="chip">${r.t}</span> ${esc(r.txt.slice(0,140))}</div>`).join(''):'<div class="empty">无匹配结果</div>')+'<div style="margin-top:10px"><button class="btn ghost" onclick="closeModal()">关闭</button></div>');
+}
+
+/* ============ knowledge graph (canvas force-directed) ============ */
+let _graph=null,_graphRAF=null;
+function initGraph(){
+  const cv=gid('graphCanvas');if(!cv)return;
+  const dpr=window.devicePixelRatio||1;const W=cv.clientWidth||600,H=cv.clientHeight||480;
+  cv.width=W*dpr;cv.height=H*dpr;const ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);
+  const idx={};
+  S.concepts.forEach(c=>idx[c.id]={id:c.id,label:c.name,type:'concept'});
+  S.args.forEach(a=>idx[a.id]={id:a.id,label:a.text.slice(0,14),type:'arg'});
+  const nodes=Object.values(idx);
+  nodes.forEach(n=>{n.x=W/2+(Math.random()-.5)*260;n.y=H/2+(Math.random()-.5)*260;n.vx=0;n.vy=0});
+  const links=[];
+  S.edges.forEach(e=>{const fa=S.args.find(a=>a.text===e.fromText);const from=fa&&idx[fa.id];const to=idx[e.to];if(from&&to)links.push({a:from,b:to,type:e.type})});
+  _graph={nodes,links,ctx,W,H,cv,tx:0,ty:0,scale:1};
+  if(!nodes.length){ctx.clearRect(0,0,W,H);ctx.fillStyle='#9aa4b2';ctx.font='14px sans-serif';ctx.fillText('还没有概念/论据，先在阅读页积累。',20,40);return}
+  bindGraph();cancelAnimationFrame(_graphRAF);stepGraph();
+}
+function stepGraph(){
+  const g=_graph;if(!g)return;const {nodes,links,ctx,W,H}=g;
+  for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){const a=nodes[i],b=nodes[j];
+    let dx=a.x-b.x,dy=a.y-b.y,d=Math.sqrt(dx*dx+dy*dy)||1;const f=2200/(d*d);a.vx+=dx/d*f;a.vy+=dy/d*f;b.vx-=dx/d*f;b.vy-=dy/d*f}
+  links.forEach(l=>{const dx=l.b.x-l.a.x,dy=l.b.y-l.a.y,d=Math.sqrt(dx*dx+dy*dy)||1;const f=(d-130)*0.01;
+    l.a.vx+=dx/d*f;l.a.vy+=dy/d*f;l.b.vx-=dx/d*f;l.b.vy-=dy/d*f});
+  nodes.forEach(n=>{n.vx+=(W/2-n.x)*0.001;n.vy+=(H/2-n.y)*0.001;n.vx*=0.85;n.vy*=0.85;if(!n.fixed){n.x+=n.vx;n.y+=n.vy}});
+  ctx.clearRect(0,0,W,H);ctx.save();ctx.translate(g.tx,g.ty);ctx.scale(g.scale,g.scale);
+  links.forEach(l=>{ctx.strokeStyle=l.type==='冲突'?'#f06a6a':'#3a4353';ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(l.a.x,l.a.y);ctx.lineTo(l.b.x,l.b.y);ctx.stroke()});
+  nodes.forEach(n=>{ctx.beginPath();ctx.fillStyle=n.type==='concept'?'#6ea8fe':'#7dd3a0';ctx.arc(n.x,n.y,6,0,7);ctx.fill();
+    ctx.fillStyle='#c9d1dc';ctx.font='11px sans-serif';ctx.fillText(n.label,n.x+8,n.y+3)});
+  ctx.restore();_graphRAF=requestAnimationFrame(stepGraph);
+}
+function bindGraph(){
+  const g=_graph,cv=g.cv;let drag=null,pan=null;
+  cv.onmousedown=e=>{const r=cv.getBoundingClientRect();const mx=(e.clientX-r.left-g.tx)/g.scale,my=(e.clientY-r.top-g.ty)/g.scale;
+    const hit=g.nodes.find(n=>Math.hypot(n.x-mx,n.y-my)<12);if(hit){drag=hit;hit.fixed=true}else pan={x:e.clientX-g.tx,y:e.clientY-g.ty}};
+  cv.onmousemove=e=>{const r=cv.getBoundingClientRect();if(drag){drag.x=(e.clientX-r.left-g.tx)/g.scale;drag.y=(e.clientY-r.top-g.ty)/g.scale}else if(pan){g.tx=e.clientX-pan.x;g.ty=e.clientY-pan.y}};
+  cv.onmouseup=()=>{if(drag)drag.fixed=false;drag=null;pan=null};
+  cv.onmouseleave=()=>{if(drag)drag.fixed=false;drag=null;pan=null};
+  cv.onwheel=e=>{e.preventDefault();const s=e.deltaY<0?1.1:0.9;g.scale=Math.max(0.3,Math.min(3,g.scale*s))};
+}
+
+/* ============ conflict radar ============ */
+function scanConflicts(){
+  const out=gid('conflictOut');const list=[];
+  for(let i=0;i<S.args.length;i++)for(let j=i+1;j<S.args.length;j++){
+    const a=S.args[i],b=S.args[j];const sc=scoreAnalogy(a,b);
+    if(sc.dims.iso>=0.4&&a.polarity!==b.polarity)list.push({a,b,iso:sc.dims.iso})}
+  list.sort((x,y)=>y.iso-x.iso);
+  out.innerHTML=list.length?list.slice(0,10).map(x=>`<div class="item"><h4 class="tag-conflict">机制相似但结论相反 · ${(x.iso*100|0)}%</h4>
+    <div class="meta">【${x.a.polarity==='counter'?'反例':'支持'}】${esc(x.a.text.slice(0,50))}<br>【${x.b.polarity==='counter'?'反例':'支持'}】${esc(x.b.text.slice(0,50))}<br>
+    <button class="btn ghost mini" style="margin-top:6px" onclick='confirmEdge(${JSON.stringify(x.a.text)},"${x.b.id}","conflict")'>标为冲突关联</button></div></div>`).join(''):'<div class="empty">未发现明显冲突。</div>';
+}
+
+/* ============ period report ============ */
+function statBox(n,l){return `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`}
+function periodReport(days){
+  const since=now()-days*864e5;
+  const nc=S.concepts.filter(c=>(c.t||0)>=since).length;
+  const na=S.args.filter(a=>(a.t||0)>=since).length;
+  const ne=S.edges.filter(e=>(e.t||0)>=since).length;
+  const ncard=S.cards.filter(c=>(c.t||0)>=since).length;
+  const mastered=S.concepts.filter(c=>(c.t||0)>=since&&['能应用','能评价'].includes(c.mastery)).length;
+  gid('periodOut').innerHTML=`<div class="grid">${statBox(nc,'新概念')}${statBox(na,'新论据')}${statBox(ne,'新关联')}${statBox(ncard,'新卡片')}${statBox(mastered,'达应用层')}</div>
+    <div class="muted" style="margin-top:8px">窗口：近 ${days} 天</div>`;
+}
+
+/* ============ cognitive profile & prediction ============ */
+function renderCog(){
+  const el=gid('cogProfile');if(!el)return;
+  const dom={};S.args.forEach(a=>{if(a.domain)dom[a.domain]=(dom[a.domain]||0)+1});
+  const topDom=Object.entries(dom).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const weakC=S.concepts.filter(c=>['未接触','初步理解'].includes(c.mastery));
+  const weakCards=S.cards.filter(c=>c.reps===0&&c.due<=now());
+  el.innerHTML=`
+   <div class="muted" style="margin-bottom:6px">兴趣领域（按论据数）</div>
+   <div>${topDom.length?topDom.map(d=>`<span class="chip acc">${esc(d[0])} · ${d[1]}</span>`).join(''):'<span class="muted">暂无领域标注（标论据时填领域）</span>'}</div>
+   <div class="muted" style="margin:12px 0 6px">薄弱概念（层级偏低，建议优先复习）</div>
+   <div>${weakC.length?weakC.slice(0,14).map(c=>`<span class="chip w">${esc(c.name)}</span>`).join(''):'<span class="muted">无</span>'}</div>
+   <div class="muted" style="margin:12px 0 6px">易错卡（回忆失败）</div>
+   <div>${weakCards.length?weakCards.slice(0,10).map(c=>`<span class="chip">${esc(c.front.slice(0,22))}</span>`).join(''):'<span class="muted">无</span>'}</div>`;
+}
+async function predictHard(){
+  const out=gid('predictOut');if(!hasAI())return out.textContent='此功能需在设置接入大模型。';
+  out.textContent='分析中…';
+  try{const prof='已掌握:'+S.concepts.filter(c=>['能应用','能评价'].includes(c.mastery)).map(c=>c.name).join('、')+
+    '\n薄弱:'+S.concepts.filter(c=>['未接触','初步理解'].includes(c.mastery)).map(c=>c.name).join('、')+
+    '\n领域:'+Object.keys(S.args.reduce((m,a)=>{if(a.domain)m[a.domain]=1;return m},{})).join('、');
+    const r=await llm('你是认知诊断教练。根据用户知识档案，预测他接下来阅读可能难以理解的3类内容，每类给一个应补的前置知识。中文，简洁分点。',prof);
+    out.innerHTML=mdlite(r);
+  }catch(e){out.textContent='出错：'+e.message}
+}
+
+/* ============ multi-tutor debate ============ */
+async function runDebate(){
+  const out=gid('debateOut');const topic=gid('debateTopic').value.trim();if(!topic)return toast('先输入话题');
+  if(!hasAI())return out.innerHTML='<div class="muted">辩论功能需接入大模型。</div>';
+  out.innerHTML='<div class="muted">两位导师思考中…</div>';
+  try{const r=await llm('模拟两位专家就话题展开辩论。返回JSON：{a:{name,stance,points:[3条]},b:{name,stance,points:[3条]},judge:"给读者的中立总结+一个思考问题"}。中文。','话题：'+topic,true);
+    const j=JSON.parse(r);
+    out.innerHTML=`<div class="row">
+      <div class="col card" style="border-color:var(--acc)"><h4>${esc(j.a.name||'导师A')} · ${esc(j.a.stance||'')}</h4>${(j.a.points||[]).map(p=>'<div style="margin:4px 0;font-size:13px">• '+esc(p)+'</div>').join('')}</div>
+      <div class="col card" style="border-color:var(--acc2)"><h4>${esc(j.b.name||'导师B')} · ${esc(j.b.stance||'')}</h4>${(j.b.points||[]).map(p=>'<div style="margin:4px 0;font-size:13px">• '+esc(p)+'</div>').join('')}</div></div>
+      <div class="card"><b>🧑‍⚖️ 裁判</b><div style="margin-top:6px;font-size:13px">${esc(j.judge||'')}</div></div>`;
+  }catch(e){out.innerHTML='出错：'+esc(e.message)}
+}
+
+/* ============ export book to markdown ============ */
+function exportBookMD(bookId){
+  const b=S.books.find(x=>x.id===bookId);if(!b)return;
+  const cs=S.concepts.filter(c=>(c.source||'').startsWith(b.title));
+  const as=S.args.filter(a=>(a.source||'').startsWith(b.title));
+  let md='# '+b.title+'\n\n## 章节\n'+b.chapters.map(c=>'- '+c.title).join('\n')+'\n\n';
+  md+='## 关键概念\n'+(cs.length?cs.map(c=>'- **'+c.name+'** （'+c.mastery+'）').join('\n'):'（无）')+'\n\n';
+  md+='## 论据\n'+(as.length?as.map(a=>'- '+a.text+(a.mechanism?'\n  - 机制：'+a.mechanism:'')+(a.domain?'\n  - 领域：'+a.domain:'')+(a.claim?'\n  - 结论：'+a.claim:'')).join('\n'):'（无）')+'\n\n';
+  md+='## 关联网络\n'+(S.edges.length?S.edges.map(e=>'- ['+e.type+'] '+(e.fromText||'').slice(0,40)+' ⇄ '+(e.toText||'').slice(0,40)).join('\n'):'（无）')+'\n';
+  const blob=new Blob([md],{type:'text/markdown'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=b.title+'.md';a.click();toast('已导出 Markdown 大纲');
+}
+
+/* ============ gamification ============ */
+function ensureGm(){if(!S.gm)S.gm={xp:0,streak:0,longest:0,lastDay:'',ach:[],day:null};if(!S.gm.ach)S.gm.ach=[]}
+function dayStr(ts){const d=new Date(ts);return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate()}
+function today(){return dayStr(Date.now())}
+function levelTitle(lv){return['初识读者','勤学者','思辨者','博览者','融会者','通识者','读书智者'][Math.min(lv-1,6)]}
+function levelInfo(xp){let lv=1,need=100,acc=0;while(xp>=acc+need){acc+=need;lv++;need=lv*100}return{lv,cur:xp-acc,need,title:levelTitle(lv)}}
+const ACHS=[
+ {id:'first_arg',icon:'⚖️',name:'第一条论据',desc:'标记 1 条论据',cond:s=>s.args.length>=1},
+ {id:'arg20',icon:'📚',name:'论据收藏家',desc:'积累 20 条论据',cond:s=>s.args.length>=20},
+ {id:'analogist',icon:'🔗',name:'类比大师',desc:'采纳 5 个关联',cond:s=>s.edges.length>=5},
+ {id:'polymath',icon:'🌐',name:'跨界者',desc:'论据覆盖 5 个领域',cond:s=>new Set(s.args.map(a=>a.domain).filter(Boolean)).size>=5},
+ {id:'scholar',icon:'🎓',name:'学者',desc:'10 个概念达应用层',cond:s=>s.concepts.filter(c=>['能应用','能评价'].includes(c.mastery)).length>=10},
+ {id:'streak3',icon:'🔥',name:'三日不辍',desc:'连续阅读 3 天',cond:s=>(s.gm.streak||0)>=3},
+ {id:'streak7',icon:'🔥',name:'一周坚持',desc:'连续阅读 7 天',cond:s=>(s.gm.streak||0)>=7},
+ {id:'streak30',icon:'👑',name:'月度铁人',desc:'连续阅读 30 天',cond:s=>(s.gm.streak||0)>=30},
+ {id:'lv5',icon:'⭐',name:'融会贯通',desc:'达到 Lv.5',cond:s=>levelInfo(s.gm.xp).lv>=5},
+];
+function checkAch(){ensureGm();const g=S.gm;ACHS.forEach(a=>{if(!g.ach.includes(a.id)&&a.cond(S)){g.ach.push(a.id);setTimeout(()=>toast('🏆 解锁成就：'+a.name),400)}})}
+function award(xp,reason){
+  ensureGm();const g=S.gm;const t=today();
+  if(g.lastDay!==t){const y=dayStr(Date.now()-864e5);g.streak=(g.lastDay===y)?(g.streak||0)+1:1;g.lastDay=t;if(g.streak>(g.longest||0))g.longest=g.streak}
+  const before=levelInfo(g.xp).lv;g.xp+=xp;const after=levelInfo(g.xp).lv;
+  if(after>before)toast('🎉 升级！Lv.'+after+' '+levelTitle(after));
+  else if(xp>0&&reason)toast('+'+xp+' XP · '+reason);
+  checkAch();save();updateHUD();
+}
+function updateHUD(){const el=gid('hud');if(!el)return;ensureGm();const g=S.gm;const li=levelInfo(g.xp);
+  el.innerHTML=`<div class="lv"><b>Lv.${li.lv} ${li.title}</b><span class="flame">🔥${g.streak||0}</span></div>
+    <div class="xpbar"><i style="width:${(li.cur/li.need*100)|0}%"></i></div>
+    <div style="color:var(--sub);margin-top:4px">${li.cur}/${li.need} XP · 点击查看</div>`;
+  el.onclick=()=>document.querySelector('.nav button[data-p=growth]').click();
+}
+function renderGrowth(){
+  ensureGm();const g=S.gm;const li=levelInfo(g.xp);const el=gid('growthBody');if(!el)return;
+  el.innerHTML=`
+   <div class="card"><div class="lv" style="display:flex;justify-content:space-between;align-items:center"><b style="font-size:17px">Lv.${li.lv} · ${li.title}</b><span class="flame" style="font-size:15px">🔥 连续 ${g.streak||0} 天（最长 ${g.longest||0}）</span></div>
+     <div class="xpbar" style="height:10px;margin-top:10px"><i style="width:${(li.cur/li.need*100)|0}%"></i></div>
+     <div class="muted" style="margin-top:6px">距下一级还差 ${li.need-li.cur} XP · 累计 ${g.xp} XP</div></div>
+   <div class="card"><h4 style="margin:0 0 10px">🎯 今日目标</h4><div id="goals"></div></div>
+   <div class="card"><h4 style="margin:0 0 10px">🏆 成就 (${g.ach.length}/${ACHS.length})</h4>
+     <div class="grid">${ACHS.map(a=>{const on=g.ach.includes(a.id);return `<div class="stat" style="opacity:${on?1:.4}"><div style="font-size:26px">${a.icon}</div><div class="l" style="margin-top:6px"><b>${a.name}</b>${on?' ✅':''}<br>${a.desc}</div></div>`}).join('')}</div></div>
+   <div class="card"><h4 style="margin:0 0 6px">积分规则</h4><div class="muted">标论据 +10 · 采纳关联 +15 · 存概念 +5 · 复习答对 +5(懂了+10) · 掌握升级 +6(达应用层 +20) · 每日阅读打卡 +3</div></div>`;
+  renderGoals();
+}
+function renderGoals(){const el=gid('goals');if(!el)return;ensureGm();const t=today();
+  const argN=S.args.filter(a=>dayStr(a.t||0)===t).length;
+  const conN=S.concepts.filter(c=>dayStr(c.t||0)===t).length;
+  const revN=(S.gm.day&&S.gm.day.d===t)?S.gm.day.rev:0;
+  const goals=[['阅读打卡',S.gm.lastDay===t?1:0,1],['标 2 条论据',argN,2],['复习 5 张卡',revN,5],['存 3 个概念',conN,3]];
+  el.innerHTML=goals.map(g=>{const done=g[1]>=g[2];return `<div style="margin:7px 0"><span style="display:inline-block;width:110px">${done?'✅':'⬜'} ${g[0]}</span>
+    <span class="scorebar" style="display:inline-block;width:38%;vertical-align:middle"><i style="width:${Math.min(100,g[1]/g[2]*100)}%"></i></span> ${g[1]}/${g[2]}</div>`}).join('');
+}
+function setMastery(id,val){const c=S.concepts.find(x=>x.id===id);if(!c)return;const order=['未接触','初步理解','能复述','能应用','能评价'];
+  const up=order.indexOf(val)>order.indexOf(c.mastery);c.mastery=val;save();
+  if(up)award((val==='能应用'||val==='能评价')?20:6,'掌握提升');
+  render('kb');
+}
+
+/* ============ demo data ============ */
+function loadDemo(){
+  const bk={id:uid(),title:'抗脆弱 · 示例',curChap:0,chapters:[{id:uid(),title:'第2章 · 过度补偿',content:'系统在承受可控的小冲击后，往往不是简单恢复，而是变得比之前更强。\n反复暴露于小剂量压力会使系统变得更强，前提是压力可控且有恢复期。\n这种“过度补偿”在肌肉训练、骨骼强化、心理韧性中都能观察到。'}]};
+  S.books.push(bk);S.curBook=bk.id;
+  const src=bk.title+' · 第2章 · 过度补偿';
+  S.args.push(
+    {id:uid(),t:now(),text:'反复暴露于小剂量压力会使系统变得更强',claim:'适度压力促进成长',mechanism:'小压力 → 系统适应 → 整体更强',domain:'生物',entities:'压力,系统,增强',polarity:'support',source:src},
+    {id:uid(),t:now(),text:'疫苗用弱化的病原训练免疫系统从而获得抵抗力',claim:'适度刺激带来防御力',mechanism:'弱化病原 → 免疫记忆 → 获得抵抗力',domain:'免疫',entities:'病原,免疫系统,抵抗力',polarity:'support',source:'免疫 · 第3章'},
+    {id:uid(),t:now(),text:'长期高压且没有恢复期会导致系统走向崩溃',claim:'过度压力有害',mechanism:'大压力 → 无恢复 → 崩溃',domain:'心理',entities:'压力,系统,崩溃',polarity:'counter',source:'倦怠社会 · 第1章'}
+  );
+  S.concepts.push({id:uid(),t:now(),name:'过度补偿',mastery:'初步理解',source:src});
+  S.cards.push(newCard('概念：过度补偿？（请解释）','系统受可控压力后超额恢复，变得比原来更强',{type:'concept'}));
+  save();toast('Demo 已载入：去「关联」输入第一条论据点查找类比');
+  document.querySelector('.nav button[data-p=read]').click();
+}
+
+/* ============ cloud sync (Supabase) ============ */
+const SB_CFG='air_supabase';
+let sb=null, sbUser=null, _syncT=null;
+function sbCfg(){try{return JSON.parse(localStorage.getItem(SB_CFG))||{}}catch(e){return{}}}
+function gid(id){return document.getElementById(id)}
+function sbMsg(t){const e=gid('sbMsg');if(e)e.textContent=t}
+function initSb(){const c=sbCfg();if(c.url&&c.key&&window.supabase){sb=window.supabase.createClient(c.url,c.key);return true}return false}
+function saveSb(){localStorage.setItem(SB_CFG,JSON.stringify({url:gid('sbUrl').value.trim(),key:gid('sbKey').value.trim()}));initSb();cloudBadge();sbMsg('已保存连接，请登录')}
+async function sbRegister(){if(!sb&&!initSb())return sbMsg('先保存 Supabase 连接');
+  const {error}=await sb.auth.signUp({email:gid('sbEmail').value.trim(),password:gid('sbPass').value.trim()});
+  if(error)return sbMsg('注册失败：'+error.message);
+  sbMsg('注册成功。若项目开了邮箱验证，请查收邮件确认后再登录；否则可直接登录。')}
+async function sbLogin(){if(!sb&&!initSb())return sbMsg('先保存 Supabase 连接');
+  const {data,error}=await sb.auth.signInWithPassword({email:gid('sbEmail').value.trim(),password:gid('sbPass').value.trim()});
+  if(error)return sbMsg('登录失败：'+error.message);
+  sbUser=data.user;cloudBadge();sbMsg('登录成功，正在同步…');await pullMerge();}
+async function sbLogout(){if(sb)await sb.auth.signOut();sbUser=null;cloudBadge();sbMsg('已退出登录')}
+async function restoreSession(){if(!initSb())return;try{const {data}=await sb.auth.getSession();
+  if(data&&data.session){sbUser=data.session.user;cloudBadge();await pullMerge()}}catch(e){}}
+async function pullMerge(){ // last-write-wins by updatedAt
+  if(!sb||!sbUser)return;
+  const {data,error}=await sb.from('reading_data').select('data,updated_at').eq('user_id',sbUser.id).maybeSingle();
+  if(error){sbMsg('拉取失败：'+error.message);return}
+  const rt=data&&data.data?(data.data.updatedAt||0):-1;const lt=S.updatedAt||0;
+  if(rt>lt){S=data.data;localStorage.setItem(KEY,JSON.stringify(S));render(curPage());aiBadge();cloudBadge();sbMsg('已拉取云端最新 '+new Date().toLocaleTimeString());toast('已同步云端最新')}
+  else{await pushNow();}
+}
+async function pushNow(){if(!sb||!sbUser)return;
+  const {error}=await sb.from('reading_data').upsert({user_id:sbUser.id,data:S,updated_at:new Date().toISOString()});
+  if(error)sbMsg('上传失败：'+error.message);else sbMsg('已上传 '+new Date().toLocaleTimeString())}
+function scheduleSync(){if(!sb||!sbUser)return;clearTimeout(_syncT);_syncT=setTimeout(pushNow,1500)}
+async function syncNow(){if(!sb||!sbUser)return sbMsg('请先登录');await pullMerge()}
+function cloudBadge(){const on=!!sbUser;const d=gid('cloudDot'),s=gid('cloudState');
+  if(d)d.className='dot'+(on?' ok':'');if(s)s.textContent=on?(sbUser.email||'已登录'):(sbCfg().url?'未登录':'未配置')}
+
+/* ============ boot ============ */
+if(window.pdfjsLib)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+ensureGm();aiBadge();cloudBadge();updateRevBadge();updateHUD();
+if(S.curBook)openReader();
+restoreSession();
+setInterval(updateRevBadge,60000);
+window.addEventListener('focus',()=>{if(sbUser)pullMerge()});
+</script>
+<script>
+(function(){
+  var rd=document.getElementById('reader'),bar=document.getElementById('selBar');
+  if(!rd||!bar)return;
+  rd.addEventListener('touchend',function(){setTimeout(function(){
+    var sel=window.getSelection(),t=sel.toString().trim();
+    if(t.length>1&&sel.rangeCount){S.curSel=t;var rc=sel.getRangeAt(0).getBoundingClientRect();
+      bar.style.display='flex';
+      bar.style.left=Math.min(window.innerWidth-180,Math.max(8,rc.left))+'px';
+      bar.style.top=Math.max(8,rc.top-46)+'px';}
+    else bar.style.display='none';
+  },60);});
+})();
+</script>
+</body>
+</html>
