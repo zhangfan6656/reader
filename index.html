@@ -771,11 +771,90 @@ function mdlite(s){return esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/
 
 /* ============ concepts ============ */
 function addConcept(name){
-  const c={id:uid(),name:name.slice(0,60),note:'',source:srcRef(),mastery:'初步理解',t:now()};
+  // 存概念前先弹「确认框」：AI 判定是否为概念 + 提取术语名 + 一句话定义
+  openConceptModal(name);
+}
+function _commitConcept(name,note,category){
+  const c={id:uid(),name:(name||'').slice(0,60),note:note||'',category:category||'概念',source:srcRef(),mastery:'初步理解',t:now()};
   S.concepts.push(c);
-  S.cards.push(newCard('概念：'+c.name+'？（请解释）',c.name,{type:'concept',refId:c.id}));
+  S.cards.push(newCard('概念：'+c.name+'？（请解释）',c.note||c.name,{type:'concept',refId:c.id}));
   save();award(5,'新概念');
   if(hasAI())genConceptCards(c);
+}
+function openConceptModal(raw){
+  const text=(raw||'').trim();if(!text)return;
+  window._pendingConceptText=text;
+  const guess=localConceptGuess(text);
+  showModal(`<h3 style="margin:0 0 8px">📌 存概念 · 先确认</h3>
+    <div class="muted" style="margin-bottom:8px;font-size:12px">概念应是"可命名的名词/术语"，能给出定义、能举反例、能跨场景复用。整句话（含主谓宾）通常是"论据/命题"，不是概念。</div>
+    <label>划中的原文</label>
+    <div style="background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px;max-height:100px;overflow:auto;font-size:13px;margin-bottom:10px">${esc(text)}</div>
+    <div id="cJudge" style="background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:10px;font-size:13px;min-height:44px">
+      ${hasAI()?'<span class="muted">🤖 AI 判定中…</span>':'<span class="muted">未接 AI，使用本地判断。接入大模型可获更准判定（设置页）。</span>'}
+    </div>
+    <label>概念名（短、名词性，建议 ≤10 字）</label>
+    <input id="c_name" value="${esc(guess.term)}" placeholder="如：过度补偿"/>
+    <label style="margin-top:8px">一句话定义（可留空）</label>
+    <textarea id="c_note" rows="2" placeholder="用一句话说清它是什么">${esc(guess.def)}</textarea>
+    <label style="margin-top:8px">类型</label>
+    <select id="c_cat">
+      <option value="概念">概念（抽象机制/现象）</option>
+      <option value="术语">术语（学科专有名词）</option>
+      <option value="人物">人物/流派</option>
+      <option value="其他">其他</option>
+    </select>
+    <div class="muted" style="margin-top:10px;font-size:12px;line-height:1.55">🧪 自检清单（满足 3 条以上再存）：<br>
+      ① 是名词/术语，不是完整句子<br>
+      ② 能给出一句话定义<br>
+      ③ 能举反例或对立概念<br>
+      ④ 可在不同场景中复用<br>
+      若更像"A 会导致 B"这样的主张 → 点右边「改存为论据」。</div>
+    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" onclick="saveConceptConfirm()">✅ 存为概念</button>
+      <button class="btn ghost" onclick="closeModal();openArgModal(window._pendingConceptText||'')">↪ 改存为论据</button>
+      <button class="btn ghost" onclick="closeModal()">取消</button>
+    </div>`);
+  if(hasAI())aiJudgeConcept(text);
+}
+function saveConceptConfirm(){
+  const ni=document.getElementById('c_name'),di=document.getElementById('c_note'),ci=document.getElementById('c_cat');
+  const name=(ni&&ni.value||'').trim();
+  const note=(di&&di.value||'').trim();
+  const cat=(ci&&ci.value)||'概念';
+  if(!name)return toast('概念名不能为空');
+  closeModal();
+  _commitConcept(name,note,cat);
+}
+function localConceptGuess(text){
+  // 优先取书名号/引号里的词；否则较短片段直接当候选
+  let term='';
+  const q=text.match(/[「《""『【](.+?)[」》""』】]/);
+  if(q)term=q[1];
+  else if(text.replace(/\s+/g,'').length<=14)term=text.replace(/[。！？，、；：,.!?;:\s]+$/,'');
+  return {term:term.slice(0,20),def:''};
+}
+async function aiJudgeConcept(text){
+  const box=document.getElementById('cJudge');if(!box)return;
+  try{
+    const r=await llm(
+      '你是知识建模助手。判断给定文本是否适合作为"概念/术语"入库。返回JSON：{isConcept:bool,confidence:0-100,category:"概念|术语|人物|其他",term:"若是概念，从原文中提取的短名词性术语，≤10字",definition:"一句话定义，≤40字",reason:"判定理由，一句话",suggestion:"若不是概念，建议怎么处理，一句话"}。中文。判定标准：概念应为可命名的名词性术语（不是完整主谓宾句子），能定义、能举反例、能跨场景复用。',
+      '文本：'+text, true);
+    const j=JSON.parse(r);
+    const ok=!!j.isConcept, conf=j.confidence|0;
+    box.innerHTML=`<div style="margin-bottom:6px">
+        <b style="color:${ok?'var(--acc2)':'var(--warn)'}">${ok?'✅ 像概念':'⚠️ 不太像概念'}</b>
+        <span class="muted"> · 置信度 ${conf}% · 类型：${esc(j.category||'-')}</span>
+      </div>
+      <div style="font-size:12px;line-height:1.55">📝 ${esc(j.reason||'')}${j.suggestion?'<br>💡 '+esc(j.suggestion):''}</div>`;
+    const ni=document.getElementById('c_name'),di=document.getElementById('c_note'),ci=document.getElementById('c_cat');
+    if(ni&&j.term&&!ni.dataset.touched)ni.value=j.term;
+    if(di&&j.definition&&!di.dataset.touched)di.value=j.definition;
+    if(ci&&j.category){const opt=[...ci.options].find(o=>o.value===j.category);ci.value=opt?j.category:'其他'}
+    ni&&ni.addEventListener('input',()=>ni.dataset.touched=1,{once:true});
+    di&&di.addEventListener('input',()=>di.dataset.touched=1,{once:true});
+  }catch(e){
+    box.innerHTML='<span class="muted">AI 判定失败：'+esc(e.message)+'，可手动确认后保存。</span>';
+  }
 }
 async function genConceptCards(c){
   try{const ctx=S.curSel?('\n原文参考：'+S.curSel.slice(0,400)):'';
