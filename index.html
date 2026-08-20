@@ -122,9 +122,9 @@
     .row{flex-direction:column}
     .modal{width:92%}
     .grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
-    .sel-bar{flex-wrap:nowrap;overflow-x:auto;max-width:none}
-    .sel-bar.mobile-bottom{position:fixed !important;left:8px !important;right:8px !important;bottom:14px !important;top:auto !important;justify-content:flex-start;border-radius:12px;padding:8px;-webkit-overflow-scrolling:touch;z-index:200}
-    .sel-bar.mobile-bottom button{flex:0 0 auto;padding:9px 12px}
+    .sel-bar{flex-wrap:wrap;overflow-x:visible;max-width:none}
+    .sel-bar.mobile-bottom{position:fixed !important;left:8px !important;right:8px !important;bottom:14px !important;top:auto !important;justify-content:center;flex-wrap:wrap;border-radius:12px;padding:8px;max-height:60vh;overflow-y:auto;-webkit-overflow-scrolling:touch;z-index:200}
+    .sel-bar.mobile-bottom button{flex:0 0 auto;padding:10px 12px;font-size:13px}
     #graphCanvas{height:60vh !important}
   }
   #aiFab{display:none;position:fixed;right:16px;bottom:16px;z-index:81;width:54px;height:54px;border-radius:50%;border:none;background:var(--acc);color:#0b1220;font-size:22px;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.45)}
