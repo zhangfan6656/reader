@@ -560,6 +560,7 @@ function openReader(){
     <div class="rd-tools">
       <button class="btn ghost mini" onclick="openTOC()">📑 目录·${bk.chapters.length}</button>
       <button class="btn ghost mini" onclick="openBookmarks()">🔖 书签</button>
+      <button class="btn ghost mini" onclick="openFTS()">🔍 搜索</button>
       <button class="btn ghost mini" onclick="openReadSettings()">Aa 阅读设置</button>
       <button class="btn ghost mini" id="focusBtn" onclick="toggleFocus()">${document.body.classList.contains('focus')?'✓ 退出专注':'⛶ 专注'}</button>
       <span class="muted" id="rdMeta" style="margin-left:auto"></span>
@@ -1077,6 +1078,80 @@ function doSearch(){
   showModal('<h3 style="margin:0 0 12px">搜索：'+esc(q)+'</h3>'+(top.length?top.map(r=>`<div class="item"><span class="chip">${r.t}</span> ${esc(r.txt.slice(0,140))}</div>`).join(''):'<div class="empty">无匹配结果</div>')+'<div style="margin-top:10px"><button class="btn ghost" onclick="closeModal()">关闭</button></div>');
 }
 
+/* ============ full-text search (in-book / cross-book) ============ */
+function openFTS(){
+  const bk=curBook();const hasBook=!!bk;
+  showModal(`<h3 style="margin:0 0 10px">🔍 全文搜索</h3>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <input id="ftq" placeholder="输入关键词（支持中英文，忽略大小写）" style="flex:1"/>
+      <select id="ftscope" style="width:auto">
+        <option value="cur"${hasBook?'':' disabled'}>本书</option>
+        <option value="all"${hasBook?'':' selected'}>全部书籍</option>
+      </select>
+    </div>
+    <div class="muted" id="ftInfo" style="font-size:12px;margin-bottom:8px">${hasBook?'当前：'+esc(bk.title):'（未打开书籍，将搜索全部）'}</div>
+    <div id="ftOut" style="max-height:56vh;overflow:auto;margin:-4px -2px 0"></div>
+    <div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+      <span class="muted" style="font-size:11px">回车或输入自动搜索 · 点结果跳转</span>
+      <button class="btn ghost" onclick="closeModal()">关闭</button>
+    </div>`);
+  const q=gid('ftq');let t;
+  const run=()=>runFTS();
+  q.addEventListener('input',()=>{clearTimeout(t);t=setTimeout(run,150)});
+  q.addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(t);run()}});
+  gid('ftscope').addEventListener('change',run);
+  setTimeout(()=>q.focus(),50);
+}
+function runFTS(){
+  const qEl=gid('ftq');if(!qEl)return;
+  const q=(qEl.value||'').trim();const out=gid('ftOut'),info=gid('ftInfo');
+  if(!q){out.innerHTML='';info.textContent='请输入关键词';return}
+  const scope=gid('ftscope').value;
+  const books=(scope==='cur'&&curBook())?[curBook()]:S.books;
+  const ql=q.toLowerCase();const MAX=200;const hits=[];
+  outer:for(const b of books){
+    for(let ci=0;ci<b.chapters.length;ci++){
+      const ch=b.chapters[ci];
+      const paras=(ch.content||'').split(/\n+/);
+      for(let pi=0;pi<paras.length;pi++){
+        const p=paras[pi];if(!p||p.charCodeAt(0)===1)continue;
+        const lower=p.toLowerCase();let pos=lower.indexOf(ql);
+        while(pos>=0){
+          hits.push({bid:b.id,btitle:b.title,ci,ctitle:ch.title,pi,pos,para:p,orig:p.substr(pos,q.length)});
+          if(hits.length>=MAX)break outer;
+          pos=lower.indexOf(ql,pos+ql.length);
+        }
+      }
+    }
+  }
+  info.textContent=`匹配 ${hits.length}${hits.length>=MAX?'+ (已截断)':''} 处 · 范围：${scope==='cur'?'本书':'全部书籍'}`;
+  if(!hits.length){out.innerHTML='<div class="empty">无匹配</div>';return}
+  out.innerHTML=hits.map((h,i)=>{
+    const s=Math.max(0,h.pos-30),e=Math.min(h.para.length,h.pos+h.orig.length+50);
+    const before=esc(h.para.slice(s,h.pos));
+    const mid=esc(h.orig);
+    const after=esc(h.para.slice(h.pos+h.orig.length,e));
+    const prefix=s>0?'…':'',suffix=e<h.para.length?'…':'';
+    return `<div class="item" style="cursor:pointer" onclick="jumpFTS(${i})">
+      <div class="meta" style="font-size:11px">${esc(h.btitle)} · ${esc(h.ctitle)}</div>
+      <div style="margin-top:4px;font-size:13px;line-height:1.55">${prefix}${before}<mark style="background:#f0b429;color:#0b1220;padding:0 2px;border-radius:2px">${mid}</mark>${after}${suffix}</div>
+    </div>`;
+  }).join('');
+  window._ftHits=hits;
+}
+function jumpFTS(i){
+  const h=window._ftHits&&window._ftHits[i];if(!h)return;
+  closeModal();
+  const cur=curBook();
+  const bookSwitch=!cur||cur.id!==h.bid;
+  if(bookSwitch){S.curBook=h.bid;const b=curBook();b.curChap=h.ci;save();
+    document.querySelector('.nav button[data-p=read]').click();
+    openReader();setTimeout(()=>scrollToQuote(h.orig,h.pi),260);return}
+  const chapSwitch=(cur.curChap||0)!==h.ci;
+  if(chapSwitch){cur.curChap=h.ci;save();openReader();setTimeout(()=>scrollToQuote(h.orig,h.pi),160);return}
+  scrollToQuote(h.orig,h.pi);
+}
+
 /* ============ knowledge graph (canvas force-directed) ============ */
 let _graph=null,_graphRAF=null;
 function initGraph(){
@@ -1329,6 +1404,13 @@ setInterval(updateRevBadge,60000);
 window.addEventListener('focus',()=>{if(sbUser)pullMerge();else bootRestore(1)});
 gid('reader').addEventListener('scroll',onReaderScroll,{passive:true});
 window.addEventListener('scroll',onReaderScroll,{passive:true});
+// Ctrl+F / Cmd+F 打开全文搜索
+document.addEventListener('keydown',function(e){
+  if((e.ctrlKey||e.metaKey)&&(e.key==='f'||e.key==='F')){
+    if(curPage()!=='read')return;
+    e.preventDefault();openFTS();
+  }
+});
 // 专注模式：☰ 点开展开工具行，点外面/4.5秒不动自动收回
 document.addEventListener('click',function(e){
   if(!document.body.classList.contains('focus'))return;
