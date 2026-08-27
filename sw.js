@@ -7,8 +7,12 @@ const CDN = [
 ];
 
 self.addEventListener('install', e => {
-  self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then(c => c.addAll([...CORE, ...CDN]).catch(() => {})));
+});
+
+// 收到页面「立即更新」指令后再激活新版本
+self.addEventListener('message', e => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', e => {
