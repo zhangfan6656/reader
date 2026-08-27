@@ -185,6 +185,7 @@
       <button data-p="kb">🧠 知识库</button>
       <button data-p="link">🔗 关联</button>
       <button data-p="graph">🕸️ 图谱</button>
+      <button data-p="model">🧩 模型</button>
       <button data-p="review">🔁 复习 <span id="revBadge" class="rev-badge"></span></button>
       <button data-p="insight">🧭 洞察</button>
       <button data-p="growth">🎮 成长</button>
@@ -267,6 +268,19 @@
       <h2 class="title">知识图谱</h2>
       <div class="desc">概念(蓝)与论据(绿)为节点，关联为边(红=冲突)。拖动节点/空白平移，滚轮缩放。</div>
       <div class="card" style="padding:0;overflow:hidden"><canvas id="graphCanvas" style="width:100%;height:70vh;display:block;cursor:grab"></canvas></div>
+    </section>
+
+    <!-- MODEL -->
+    <section class="page" id="p-model">
+      <h2 class="title">思维模型 · 格栅</h2>
+      <div class="desc">芒格说：把各关键学科的核心模型装进脑子、形成格栅，遇事用多个模型叠加分析。这里沉淀你自己的思维模型，并追踪学科覆盖广度——不是记住某句话，而是抽出能跨场景复用的机制。</div>
+      <div class="card"><div style="display:flex;justify-content:space-between;align-items:center">
+        <h4 style="margin:0">📐 学科覆盖度</h4>
+        <button class="btn mini" onclick="openModelModal('')">＋ 新建模型</button></div>
+        <div id="mdCoverage" style="margin-top:10px"></div></div>
+      <div class="card"><h4 style="margin:0 0 10px">🧩 我的模型库</h4>
+        <input id="mdSearch" placeholder="🔍 搜模型…" style="margin-bottom:10px" oninput="renderModels()"/>
+        <div id="modelList"></div></div>
     </section>
 
     <!-- REVIEW -->
@@ -358,6 +372,7 @@
 <div class="sel-bar" id="selBar">
   <button onclick="selAct('practice')">🎯我来判断</button>
   <button onclick="selAct('smart')">✨智能收藏</button>
+  <button onclick="selAct('model')">🧩提模型</button>
   <button onclick="selAct('explain')">解释</button>
   <button onclick="selAct('breakdown')">拆逻辑</button>
   <button onclick="selAct('copy')">📋复制</button>
@@ -379,7 +394,7 @@
 const KEY='air_state_v1';
 let S=load();
 function load(){try{return JSON.parse(localStorage.getItem(KEY))||seed()}catch(e){return seed()}}
-function seed(){return{settings:{base:'',key:'',model:''},books:[],concepts:[],args:[],edges:[],cards:[],qa:[],quotes:[],train:{attempts:0,correct:0,streak:0,best:0,byType:{},log:[]},gm:{xp:0,streak:0,longest:0,lastDay:'',ach:[],day:null},curBook:null,curSel:''}}
+function seed(){return{settings:{base:'',key:'',model:''},books:[],concepts:[],args:[],edges:[],cards:[],qa:[],quotes:[],models:[],train:{attempts:0,correct:0,streak:0,best:0,byType:{},log:[]},gm:{xp:0,streak:0,longest:0,lastDay:'',ach:[],day:null},curBook:null,curSel:''}}
 function save(){S.updatedAt=now();localStorage.setItem(KEY,JSON.stringify(S));scheduleSync()}
 const uid=()=>Math.random().toString(36).slice(2,9);
 const now=()=>Date.now();
@@ -762,6 +777,7 @@ async function selAct(act){
   selBar.style.display='none';
   const sel=S.curSel;if(!sel)return;
   if(act==='practice'){startPractice(sel);return}
+  if(act==='model'){extractModel(sel);return}
   if(act==='smart'){smartCapture(sel);return}
   if(act==='concept'){addConcept(sel);return}
   if(act==='arg'){openArgModal(sel);return}
@@ -959,6 +975,73 @@ function renderTrain(){
       <span class="scorebar" style="display:inline-block;width:55%;vertical-align:middle"><i style="width:${t.a==null?0:t.a}%"></i></span> ${t.a==null?'—':t.a+'%'} <span class="muted">(${t.n})</span></div>`).join('')}
     ${weak?`<div class="muted" style="margin-top:8px">🔧 最易错：<b class="tag-conflict">${weak.v}</b>（${weak.a}%）——多留意它与相邻类型的界线。</div>`:''}
     <div class="muted" style="font-size:12px;margin-top:10px">练法：阅读时选中文字 → 工具条「🎯我来判断」，先自己判定，再看点评。</div>`;
+}
+
+/* ============ Layer2: 思维模型库 (mental models / latticework) ============ */
+const DISCIPLINES=['数学/统计','物理/工程','化学','生物/进化','心理学','经济学','历史','哲学/逻辑','社会学','商业/管理'];
+function extractModel(raw){
+  const text=(raw||'').trim();if(text.length<2)return toast('请多选几个字');
+  window._mdText=text;
+  openModelModal(text);
+  if(hasAI())aiExtractModel(text);
+}
+function openModelModal(text,existing){
+  const m=existing||{};
+  showModal(`<h3 style="margin:0 0 8px">🧩 ${existing?'编辑':'提炼'}思维模型</h3>
+   ${existing?'':`<div class="muted" style="font-size:12px;margin-bottom:8px">从这段文字抽出可迁移的“模型”——不是记住这句话，而是它背后能跨场景复用的机制。</div>
+   <label>原文</label><div style="background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px;max-height:90px;overflow:auto;font-size:13px;margin-bottom:8px">${esc(text||'')}</div>
+   <div id="mdJudge" class="muted" style="font-size:12px;margin-bottom:6px">${hasAI()?'🤖 AI 提炼中…':'未接 AI，请手动填写（设置页接入更省事）。'}</div>`}
+   <label>模型名</label><input id="em_name" value="${esc(m.name||'')}" placeholder="如：复利 / 反脆弱 / 激励错位"/>
+   <label>所属学科</label><input id="em_disc" value="${esc(m.discipline||'')}" placeholder="数学 / 心理学 / 生物…"/>
+   <label>一句话内核</label><input id="em_core" value="${esc(m.core||'')}" placeholder="这个模型最本质的机制"/>
+   <label>适用场景（何时调用它）</label><input id="em_when" value="${esc(m.when||'')}"/>
+   <label>边界/反例（何时失灵）</label><input id="em_bound" value="${esc(m.boundary||'')}"/>
+   <label>案例（每行一个，跨领域更佳）</label><textarea id="em_ex" rows="2">${esc((m.examples||[]).join('\n'))}</textarea>
+   <div style="margin-top:12px;display:flex;gap:8px"><button class="btn" onclick="saveModelFromModal('${existing?m.id:''}')">保存模型</button><button class="btn ghost" onclick="closeModal()">取消</button></div>`);
+  ['em_name','em_disc','em_core','em_when','em_bound','em_ex'].forEach(id=>{const el=gid(id);if(el)el.addEventListener('input',()=>el.dataset.touched=1,{once:true})});
+}
+async function aiExtractModel(text){
+  const box=gid('mdJudge');if(!box)return;
+  try{
+    const r=await llm('你是芒格式思维模型提炼助手。从文本中提炼一个可跨学科迁移的思维模型。返回JSON：{name:"模型名≤8字",discipline:"最贴切的单一学科",core:"一句话内核机制≤40字",when:"何时该调用它≤30字",boundary:"边界或反例≤30字",examples:["1-2个跨领域例子"]}。中文。',
+      '文本：\n'+text,true);
+    const j=JSON.parse(r);if(!gid('mdJudge'))return;box.textContent='🤖 已提炼，可修改后保存';
+    const set=(id,v)=>{const el=gid(id);if(el&&v!=null&&(''+v).trim()&&!el.dataset.touched)el.value=v};
+    set('em_name',j.name);set('em_disc',j.discipline);set('em_core',j.core);set('em_when',j.when);set('em_bound',j.boundary);
+    if(Array.isArray(j.examples))set('em_ex',j.examples.join('\n'));
+  }catch(e){box.textContent='AI 提炼失败：'+e.message}
+}
+function saveModelFromModal(id){
+  S.models=S.models||[];const g=x=>((gid(x)||{}).value||'').trim();
+  const name=g('em_name');if(!name)return toast('模型名不能为空');
+  const o={name,discipline:g('em_disc'),core:g('em_core'),when:g('em_when'),boundary:g('em_bound'),examples:g('em_ex').split('\n').map(s=>s.trim()).filter(Boolean)};
+  if(id){const m=S.models.find(x=>x.id===id);if(m)Object.assign(m,o)}
+  else{o.id=uid();o.t=now();o.source=srcRef();o.mastery='初步理解';S.models.push(o);award(12,'新模型')}
+  save();closeModal();toast('已保存模型');if(curPage()==='model')renderModels();
+}
+function editModel(id){const m=(S.models||[]).find(x=>x.id===id);if(m)openModelModal('',m)}
+function renderModels(){
+  const list=gid('modelList');if(!list)return;const cov=gid('mdCoverage');
+  const models=S.models||[];
+  const distinct=[...new Set(models.map(m=>(m.discipline||'').trim()).filter(Boolean))];
+  if(cov){
+    const inList=d=>DISCIPLINES.some(x=>x.includes(d)||d.includes(x.split('/')[0]));
+    const others=distinct.filter(d=>!inList(d));
+    cov.innerHTML=`<div class="muted" style="margin-bottom:8px">已覆盖 <b>${distinct.length}</b> 个学科 · 共 <b>${models.length}</b> 个模型（芒格建议广泛涉猎各学科的“大道理”，别只用一两个模型）</div>
+      <div>${DISCIPLINES.map(d=>{const has=distinct.some(x=>x.includes(d.split('/')[0])||d.includes(x));return `<span class="chip ${has?'g':''}">${has?'✓ ':''}${d}</span>`}).join('')}</div>
+      ${others.length?'<div class="muted" style="margin-top:6px">其他：'+others.map(d=>`<span class="chip acc">${esc(d)}</span>`).join('')+'</div>':''}`;
+  }
+  const ql=((gid('mdSearch')||{}).value||'').trim().toLowerCase();
+  let arr=models;
+  if(ql)arr=models.filter(m=>((m.name+' '+m.discipline+' '+m.core+' '+m.when+' '+(m.examples||[]).join(' '))||'').toLowerCase().includes(ql));
+  list.innerHTML=arr.length?arr.map(m=>`<div class="item"><h4>${esc(m.name)} ${m.discipline?`<span class="chip acc">${esc(m.discipline)}</span>`:''}</h4>
+    ${m.core?`<div style="font-size:13px;margin:2px 0 6px">🧠 ${esc(m.core)}</div>`:''}
+    ${m.when?`<div class="muted" style="font-size:12px">▶ 适用：${esc(m.when)}</div>`:''}
+    ${m.boundary?`<div class="muted" style="font-size:12px">⚠ 边界：${esc(m.boundary)}</div>`:''}
+    ${(m.examples&&m.examples.length)?`<div class="muted" style="font-size:12px">📎 案例：${m.examples.map(esc).join('；')}</div>`:''}
+    <div class="meta" style="margin-top:6px">${esc(m.source||'')}
+      <button class="btn ghost mini" style="float:right" onclick="del('models','${m.id}');renderModels()">删</button>
+      <button class="btn ghost mini" style="float:right" onclick="editModel('${m.id}')">编辑</button></div></div>`).join(''):'<div class="empty">还没有模型。读到重要机制→工具条「🧩提模型」，或右上「新建模型」。</div>';
 }
 
 /* ============ concepts ============ */
@@ -1280,6 +1363,7 @@ function render(p){
   document.body.classList.toggle('rp',p==='read');
   if(p==='read')openReader();
   if(p==='graph')initGraph();
+  if(p==='model')renderModels();
   if(p==='insight')renderCog();
   if(p==='growth')renderGrowth();
   if(p==='kb'){
@@ -1336,7 +1420,7 @@ function saveConceptEdit(id){
 
 function renderReport(){
   const mastered=S.concepts.filter(c=>['能应用','能评价'].includes(c.mastery)).length;
-  const stats=[['📚',S.books.length,'书籍'],['🔑',S.concepts.length,'概念'],['⚖️',S.args.length,'论据'],['💎',(S.quotes||[]).length,'金句'],['🔗',S.edges.length,'关联'],['🗂️',S.cards.length,'复习卡'],['✅',mastered,'达应用层']];
+  const stats=[['📚',S.books.length,'书籍'],['🔑',S.concepts.length,'概念'],['⚖️',S.args.length,'论据'],['🧩',(S.models||[]).length,'思维模型'],['💎',(S.quotes||[]).length,'金句'],['🔗',S.edges.length,'关联'],['🗂️',S.cards.length,'复习卡'],['✅',mastered,'达应用层']];
   document.getElementById('statGrid').innerHTML=stats.map(s=>`<div class="stat"><div class="n">${s[1]}</div><div class="l">${s[0]} ${s[2]}</div></div>`).join('');
   const levels=['未接触','初步理解','能复述','能应用','能评价'];
   const dist=levels.map(l=>[l,S.concepts.filter(c=>c.mastery===l).length]);
@@ -1370,6 +1454,7 @@ function doSearch(){
   S.books.forEach(b=>b.chapters.forEach(ch=>res.push({t:'章节',txt:b.title+' · '+ch.title,s:Math.max(jac(qb,bigrams(ch.title)),jac(qb,bigrams(ch.content))*0.7)})));
   S.qa.forEach(x=>res.push({t:'问答',txt:x.q,s:jac(qb,bigrams(x.q))}));
   (S.quotes||[]).forEach(q=>res.push({t:'金句',txt:q.text,s:jac(qb,bigrams(q.text))}));
+  (S.models||[]).forEach(m=>res.push({t:'模型',txt:m.name+(m.core?'：'+m.core:''),s:Math.max(jac(qb,bigrams(m.name)),jac(qb,bigrams(m.core||''))*0.9)}));
   const top=res.filter(r=>r.s>0.03).sort((a,b)=>b.s-a.s).slice(0,20);
   showModal('<h3 style="margin:0 0 12px">搜索：'+esc(q)+'</h3>'+(top.length?top.map(r=>`<div class="item"><span class="chip">${r.t}</span> ${esc(r.txt.slice(0,140))}</div>`).join(''):'<div class="empty">无匹配结果</div>')+'<div style="margin-top:10px"><button class="btn ghost" onclick="closeModal()">关闭</button></div>');
 }
