@@ -1158,9 +1158,11 @@ function render(p){
       <div class="meta"><button class="btn mini" onclick="S.curBook='${b.id}';save();document.querySelector('.nav button[data-p=read]').click()">阅读</button>
       <button class="btn ghost mini" onclick="exportBookMD('${b.id}')">导出MD</button>
       <button class="btn ghost mini" onclick="del('books','${b.id}')">删</button></div></div></div>`).join(''):'<div class="empty">还没有书</div>';
-    document.getElementById('conceptList').innerHTML=S.concepts.length?S.concepts.map(c=>`<div class="item"><h4>${esc(c.name)}</h4>
+    document.getElementById('conceptList').innerHTML=S.concepts.length?S.concepts.map(c=>`<div class="item"><h4>${esc(c.name)} ${c.category?`<span class="chip">${esc(c.category)}</span>`:''}</h4>
+      ${c.note?`<div style="font-size:13px;margin:2px 0 8px;color:var(--txt)">${esc(c.note)}</div>`:'<div class="muted" style="font-size:12px;margin:2px 0 8px">（无定义，点「编辑」补充）</div>'}
       <div class="meta"><select onchange="setMastery('${c.id}',this.value)" style="width:auto;padding:2px 6px;font-size:11px">${['未接触','初步理解','能复述','能应用','能评价'].map(l=>`<option${l===c.mastery?' selected':''}>${l}</option>`).join('')}</select> ${esc(c.source||'')}
-      <button class="btn ghost mini" style="float:right" onclick="del('concepts','${c.id}')">删</button></div></div>`).join(''):'<div class="empty">选中文本→存概念</div>';
+      <button class="btn ghost mini" style="float:right" onclick="del('concepts','${c.id}')">删</button>
+      <button class="btn ghost mini" style="float:right" onclick="editConcept('${c.id}')">编辑</button></div></div>`).join(''):'<div class="empty">选中文本→存概念</div>';
     document.getElementById('argList').innerHTML=S.args.length?S.args.map(a=>`<div class="item"><h4>${esc(a.text)}</h4>
       <div class="meta">${a.mechanism?'机制: '+esc(a.mechanism)+' · ':''}${a.domain?'领域: '+esc(a.domain)+' · ':''}${a.polarity==='counter'?'反例':'支持'}
       <button class="btn ghost mini" onclick="editArg('${a.id}')">编辑</button>
@@ -1181,6 +1183,25 @@ function render(p){
   aiBadge();
 }
 function editArg(id){openArgModal(null,S.args.find(a=>a.id===id))}
+function editConcept(id){
+  const c=S.concepts.find(x=>x.id===id);if(!c)return;
+  showModal(`<h3 style="margin:0 0 12px">编辑概念</h3>
+    <label>概念名</label><input id="ec_name" value="${esc(c.name)}"/>
+    <label style="margin-top:8px">一句话定义</label><textarea id="ec_note" rows="3">${esc(c.note||'')}</textarea>
+    <label style="margin-top:8px">类型</label>
+    <select id="ec_cat">${['概念','术语','人物','其他'].map(t=>`<option${t===(c.category||'概念')?' selected':''}>${t}</option>`).join('')}</select>
+    <div style="margin-top:14px;display:flex;gap:8px">
+      <button class="btn" onclick="saveConceptEdit('${id}')">保存</button>
+      <button class="btn ghost" onclick="closeModal()">取消</button>
+    </div>`);
+}
+function saveConceptEdit(id){
+  const c=S.concepts.find(x=>x.id===id);if(!c)return;
+  const name=(document.getElementById('ec_name').value||'').trim();
+  if(!name)return toast('概念名不能为空');
+  c.name=name;c.note=(document.getElementById('ec_note').value||'').trim();c.category=document.getElementById('ec_cat').value;
+  save();closeModal();toast('已更新');render('kb');
+}
 
 function renderReport(){
   const mastered=S.concepts.filter(c=>['能应用','能评价'].includes(c.mastery)).length;
@@ -1213,7 +1234,7 @@ function updateRevBadge(){const el=gid('revBadge');if(!el)return;const n=dueCard
 /* ============ global search ============ */
 function doSearch(){
   const q=gid('globalSearch').value.trim();if(!q)return;const qb=bigrams(q);const res=[];
-  S.concepts.forEach(c=>res.push({t:'概念',txt:c.name,s:jac(qb,bigrams(c.name))}));
+  S.concepts.forEach(c=>res.push({t:'概念',txt:c.name+(c.note?'：'+c.note:''),s:Math.max(jac(qb,bigrams(c.name)),jac(qb,bigrams(c.note||''))*0.9)}));
   S.args.forEach(a=>res.push({t:'论据',txt:a.text,s:Math.max(jac(qb,bigrams(a.text)),jac(qb,bigrams(a.mechanism))*0.9)}));
   S.books.forEach(b=>b.chapters.forEach(ch=>res.push({t:'章节',txt:b.title+' · '+ch.title,s:Math.max(jac(qb,bigrams(ch.title)),jac(qb,bigrams(ch.content))*0.7)})));
   S.qa.forEach(x=>res.push({t:'问答',txt:x.q,s:jac(qb,bigrams(x.q))}));
