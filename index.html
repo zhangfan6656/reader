@@ -285,6 +285,7 @@
         <div style="margin-top:10px"><button class="btn ghost mini" onclick="predictHard()">🔮 预测我可能读不懂的内容（需 AI）</button></div>
         <div id="predictOut" class="muted" style="margin-top:8px"></div>
       </div>
+      <div class="card"><h4 style="margin:0 0 10px">🎯 识别力训练</h4><div id="trainStats"></div></div>
       <div class="card"><h4 style="margin:0 0 10px">⚔️ 多导师辩论</h4>
         <input id="debateTopic" placeholder="输入一个争议话题，如：压力对成长利大于弊吗？" />
         <div style="margin-top:8px"><button class="btn" onclick="runDebate()">开始辩论（需 AI）</button></div>
@@ -355,6 +356,7 @@
 </div>
 
 <div class="sel-bar" id="selBar">
+  <button onclick="selAct('practice')">🎯我来判断</button>
   <button onclick="selAct('smart')">✨智能收藏</button>
   <button onclick="selAct('explain')">解释</button>
   <button onclick="selAct('breakdown')">拆逻辑</button>
@@ -377,7 +379,7 @@
 const KEY='air_state_v1';
 let S=load();
 function load(){try{return JSON.parse(localStorage.getItem(KEY))||seed()}catch(e){return seed()}}
-function seed(){return{settings:{base:'',key:'',model:''},books:[],concepts:[],args:[],edges:[],cards:[],qa:[],quotes:[],gm:{xp:0,streak:0,longest:0,lastDay:'',ach:[],day:null},curBook:null,curSel:''}}
+function seed(){return{settings:{base:'',key:'',model:''},books:[],concepts:[],args:[],edges:[],cards:[],qa:[],quotes:[],train:{attempts:0,correct:0,streak:0,best:0,byType:{},log:[]},gm:{xp:0,streak:0,longest:0,lastDay:'',ach:[],day:null},curBook:null,curSel:''}}
 function save(){S.updatedAt=now();localStorage.setItem(KEY,JSON.stringify(S));scheduleSync()}
 const uid=()=>Math.random().toString(36).slice(2,9);
 const now=()=>Date.now();
@@ -759,6 +761,7 @@ function toggleAssist(force){const a=document.querySelector('.assist');if(!a)ret
 async function selAct(act){
   selBar.style.display='none';
   const sel=S.curSel;if(!sel)return;
+  if(act==='practice'){startPractice(sel);return}
   if(act==='smart'){smartCapture(sel);return}
   if(act==='concept'){addConcept(sel);return}
   if(act==='arg'){openArgModal(sel);return}
@@ -829,6 +832,134 @@ async function ask(){
   }catch(e){document.getElementById('assistOut').lastChild.remove();pushMsg('ai','出错：'+esc(e.message))}
 }
 function mdlite(s){return esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\n/g,'<br>')}
+
+/* ============ Layer1: 识别力训练 (deliberate practice) ============ */
+const TYPE_LABELS={claim:'论点',evidence:'论据',concept:'概念',quote:'金句',narrative:'铺垫叙述'};
+function trainState(){if(!S.train)S.train={attempts:0,correct:0,streak:0,best:0,byType:{},log:[]};return S.train}
+function startPractice(raw){
+  const text=(raw||'').trim();if(text.length<2)return toast('请多选几个字');
+  window._prac={text};window._pracVerdict=null;
+  showModal(`<h3 style="margin:0 0 8px">🎯 我来判断</h3>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">先自己判断这段的性质——判断力是把内容内化成思维模型的第一步，别急着让 AI 替你想。</div>
+    <label>原文</label>
+    <div style="background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px;max-height:120px;overflow:auto;font-size:13px;margin-bottom:10px">${esc(text)}</div>
+    <div class="muted" style="font-size:12px;margin-bottom:6px">你认为它主要是？</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${Object.entries(TYPE_LABELS).map(([k,v])=>`<button class="btn ghost" onclick="pracPick('${k}')">${v}</button>`).join('')}
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:12px;line-height:1.7">论点=作者主张的结论；论据=支撑结论的事实/事例/推理；概念=可命名术语；金句=精彩表达；铺垫=背景叙述。</div>
+    <div style="margin-top:12px"><button class="btn ghost mini" onclick="closeModal()">取消</button></div>`);
+}
+function pracPick(type){
+  const p=window._prac;if(!p)return;p.userType=type;
+  const back=`<button class="btn ghost" onclick="startPractice(window._prac.text)">← 返回</button>`;
+  if(type==='evidence'){
+    showModal(`<h3 style="margin:0 0 8px">🎯 再拆一层（论据）</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">你判断这是「论据」。主动拆解：它在支撑哪个论点？靠什么机制？（可留空，但自己拆更练脑）</div>
+      <label>它支持的论点 claim</label><input id="prac_claim" placeholder="作者想让你相信的结论"/>
+      <label>机制/因果链（用 → 连接）</label><input id="prac_mech" placeholder="如：反复小压力 → 适应 → 更强"/>
+      <div style="margin-top:12px;display:flex;gap:8px">${back}<button class="btn" onclick="pracSubmit()">提交判断</button></div>`);
+  } else if(type==='claim'){
+    showModal(`<h3 style="margin:0 0 8px">🎯 再拆一层（论点）</h3>
+      <div class="muted" style="font-size:12px;margin-bottom:8px">你判断这是「论点」。作者用什么来支撑它？</div>
+      <label>支撑它的论据/理由（可留空）</label><input id="prac_support" placeholder="事实/数据/事例/推理"/>
+      <div style="margin-top:12px;display:flex;gap:8px">${back}<button class="btn" onclick="pracSubmit()">提交判断</button></div>`);
+  } else if(type==='concept'){
+    showModal(`<h3 style="margin:0 0 8px">🎯 再拆一层（概念）</h3>
+      <label>概念名</label><input id="prac_term" value="${esc(p.text.replace(/\s+/g,'').length<=12?p.text:'')}"/>
+      <label>一句话定义（可留空）</label><input id="prac_def" placeholder="用一句话说清它是什么"/>
+      <div style="margin-top:12px;display:flex;gap:8px">${back}<button class="btn" onclick="pracSubmit()">提交判断</button></div>`);
+  } else { pracSubmit(); }
+}
+async function pracSubmit(){
+  const p=window._prac;if(!p)return;
+  p.claim=((gid('prac_claim')||{}).value||'').trim();
+  p.mech=((gid('prac_mech')||{}).value||'').trim();
+  p.support=((gid('prac_support')||{}).value||'').trim();
+  p.term=((gid('prac_term')||{}).value||'').trim();
+  p.def=((gid('prac_def')||{}).value||'').trim();
+  showModal('<h3 style="margin:0 0 8px">🎯 评判中…</h3><div class="muted">'+(hasAI()?'🤖 AI 正在点评你的判断…':'本地判定中…')+'</div>');
+  let v;
+  if(hasAI()){try{v=await pracJudgeAI(p)}catch(e){v=pracJudgeLocal(p);v._err=e.message}}
+  else v=pracJudgeLocal(p);
+  window._pracVerdict=v;
+  recordPractice(p.userType,v.correctType,v.correct);
+  showModal(pracResult(p,v));
+}
+async function pracJudgeAI(p){
+  const r=await llm('你是阅读理解教练。判断给定文本片段主要属于哪一类：claim(论点/结论主张)、evidence(论据/支撑事实事例)、concept(可命名术语)、quote(金句)、narrative(铺垫叙述)。并点评用户的判断。返回JSON：{correctType:"claim|evidence|concept|quote|narrative",feedback:"针对用户判断的点评，指出对在哪或错在哪，≤60字",why:"为什么属于该类，≤50字",correctClaim:"若是evidence，它支持的论点，否则空",correctMechanism:"若是evidence，机制链用→连接，否则空",tip:"一条提升识别力的建议，≤40字"}。中文。',
+    '文本片段：\n'+p.text+'\n\n用户判断：'+(TYPE_LABELS[p.userType]||p.userType)+(p.claim?('\n用户填的论点：'+p.claim):'')+(p.mech?('\n用户填的机制：'+p.mech):''),true);
+  const j=JSON.parse(r);j.correct=(j.correctType===p.userType);return j;
+}
+function pracJudgeLocal(p){
+  const t=p.text.replace(/\s+/g,'');const short=t.length<=14;const hasArrow=skeleton(p.text).length>1;
+  let ct='evidence';
+  if(short)ct='concept';
+  else if(/因此|所以|应该|必须|我认为|结论是|归根结底|说明|证明了|意味着/.test(p.text))ct='claim';
+  else if(hasArrow)ct='evidence';
+  return {correctType:ct,correct:ct===p.userType,feedback:'本地初判，仅供参考；接入 AI 点评更准。',why:'依据长度/关键词/因果结构的启发式判断。',correctClaim:'',correctMechanism:'',tip:'留意「因此/所以/应该」常引出论点。',_local:true};
+}
+function pracResult(p,v){
+  const ct=v.correctType||p.userType;const ok=v.correct;const ts=trainState();
+  const acc=ts.attempts?Math.round(ts.correct/ts.attempts*100):0;
+  return `<h3 style="margin:0 0 8px">${ok?'✅ 判断正确':'❌ 判断有偏差'}</h3>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">你的判断：<b>${TYPE_LABELS[p.userType]||p.userType}</b> · 正确分类：<b class="${ok?'tag-strong':'tag-conflict'}">${TYPE_LABELS[ct]||ct}</b></div>
+    ${v._local?'<div class="muted" style="font-size:11px;margin-bottom:6px">（本地初判，接入 AI 更准）</div>':''}
+    ${v._err?'<div class="muted" style="font-size:11px;margin-bottom:6px">AI 出错，改用本地判断：'+esc(v._err)+'</div>':''}
+    <div style="background:var(--panel2);border-radius:8px;padding:10px;font-size:13px;line-height:1.7">
+      ${v.feedback?'<div>💬 '+esc(v.feedback)+'</div>':''}
+      ${v.why?'<div style="margin-top:4px">📖 为什么：'+esc(v.why)+'</div>':''}
+      ${v.correctClaim?'<div style="margin-top:4px">🎯 支持的论点：'+esc(v.correctClaim)+'</div>':''}
+      ${v.correctMechanism?'<div style="margin-top:4px">⚙️ 机制：'+esc(v.correctMechanism)+'</div>':''}
+      ${v.tip?'<div style="margin-top:4px">💡 '+esc(v.tip)+'</div>':''}
+    </div>
+    <div class="muted" style="font-size:12px;margin:10px 0 4px">识别力：正确率 ${acc}% · 连击 ${ts.streak} · 累计 ${ts.attempts} 次</div>
+    <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" onclick='pracSave(${JSON.stringify(ct)})'>按正确分类存入库</button>
+      <button class="btn ghost" onclick="closeModal()">完成</button>
+    </div>`;
+}
+function pracSave(type){
+  const p=window._prac;if(!p)return;const v=window._pracVerdict||{};
+  if(type==='concept'){_commitConcept(p.term||(p.text.replace(/\s+/g,'').length<=12?p.text:p.text.slice(0,10)),p.def||'','概念')}
+  else if(type==='evidence'){S.args.push({id:uid(),t:now(),text:p.text,claim:p.claim||v.correctClaim||'',mechanism:p.mech||v.correctMechanism||'',domain:'',entities:'',polarity:'support',source:srcRef()});award(10,'新论据')}
+  else if(type==='claim'){S.args.push({id:uid(),t:now(),text:p.text,claim:p.text,mechanism:'',domain:'',entities:'',polarity:'support',source:srcRef(),isClaim:true});award(6,'新论点')}
+  else {S.quotes=S.quotes||[];S.quotes.push({id:uid(),t:now(),text:p.text,refined:'',source:srcRef()});award(3,'金句')}
+  save();closeModal();toast('已按「'+(TYPE_LABELS[type]||type)+'」入库');
+}
+function recordPractice(userType,correctType,ok){
+  const ts=trainState();ts.attempts++;
+  if(ok){ts.correct++;ts.streak++;ts.best=Math.max(ts.best,ts.streak)}else ts.streak=0;
+  const bt=ts.byType[correctType]||(ts.byType[correctType]={a:0,c:0});bt.a++;if(ok)bt.c++;
+  ts.log.push({t:now(),u:userType,c:correctType,ok});if(ts.log.length>500)ts.log.shift();
+  award(ok?4:2,'识别练习');
+}
+function trainLevel(ts){
+  const acc=ts.attempts?ts.correct/ts.attempts:0;const n=ts.attempts;
+  if(n<10)return{name:'入门',i:0};
+  if(acc>=0.85&&n>=80)return{name:'大师',i:4};
+  if(acc>=0.8&&n>=40)return{name:'熟练',i:3};
+  if(acc>=0.7&&n>=20)return{name:'进阶',i:2};
+  return{name:'学徒',i:1};
+}
+function renderTrain(){
+  const el=gid('trainStats');if(!el)return;const ts=trainState();
+  const acc=ts.attempts?Math.round(ts.correct/ts.attempts*100):0;const lv=trainLevel(ts);
+  const types=Object.entries(TYPE_LABELS).map(([k,v])=>{const b=ts.byType[k];return {v,a:b?Math.round(b.c/b.a*100):null,n:b?b.a:0}});
+  const weak=types.filter(t=>t.n>=3&&t.a!=null).sort((x,y)=>x.a-y.a)[0];
+  el.innerHTML=`
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(100px,1fr))">
+      <div class="stat"><div class="n">${lv.name}</div><div class="l">识别力等级</div></div>
+      <div class="stat"><div class="n">${acc}%</div><div class="l">正确率</div></div>
+      <div class="stat"><div class="n">${ts.attempts}</div><div class="l">累计练习</div></div>
+      <div class="stat"><div class="n">${ts.best}</div><div class="l">最佳连击</div></div>
+    </div>
+    <div class="muted" style="margin:10px 0 4px">各类型识别准确率</div>
+    ${types.map(t=>`<div style="margin:5px 0"><span class="muted" style="display:inline-block;width:64px">${t.v}</span>
+      <span class="scorebar" style="display:inline-block;width:55%;vertical-align:middle"><i style="width:${t.a==null?0:t.a}%"></i></span> ${t.a==null?'—':t.a+'%'} <span class="muted">(${t.n})</span></div>`).join('')}
+    ${weak?`<div class="muted" style="margin-top:8px">🔧 最易错：<b class="tag-conflict">${weak.v}</b>（${weak.a}%）——多留意它与相邻类型的界线。</div>`:''}
+    <div class="muted" style="font-size:12px;margin-top:10px">练法：阅读时选中文字 → 工具条「🎯我来判断」，先自己判定，再看点评。</div>`;
+}
 
 /* ============ concepts ============ */
 function addConcept(name){
@@ -1396,6 +1527,7 @@ function renderCog(){
    <div>${weakC.length?weakC.slice(0,14).map(c=>`<span class="chip w">${esc(c.name)}</span>`).join(''):'<span class="muted">无</span>'}</div>
    <div class="muted" style="margin:12px 0 6px">易错卡（回忆失败）</div>
    <div>${weakCards.length?weakCards.slice(0,10).map(c=>`<span class="chip">${esc(c.front.slice(0,22))}</span>`).join(''):'<span class="muted">无</span>'}</div>`;
+  renderTrain();
 }
 async function predictHard(){
   const out=gid('predictOut');if(!hasAI())return out.textContent='此功能需在设置接入大模型。';
