@@ -243,6 +243,7 @@
         <div class="col card"><h4 style="margin:0 0 10px">🔑 概念</h4><div id="conceptList"></div></div>
       </div>
       <div class="card"><h4 style="margin:0 0 10px">⚖️ 论据（结构化）</h4><div id="argList"></div></div>
+      <div class="card"><h4 style="margin:0 0 10px">💎 金句</h4><div id="quoteList"></div></div>
     </section>
 
     <!-- LINK -->
@@ -353,6 +354,7 @@
 </div>
 
 <div class="sel-bar" id="selBar">
+  <button onclick="selAct('smart')">✨智能收藏</button>
   <button onclick="selAct('explain')">解释</button>
   <button onclick="selAct('breakdown')">拆逻辑</button>
   <button onclick="selAct('copy')">📋复制</button>
@@ -374,7 +376,7 @@
 const KEY='air_state_v1';
 let S=load();
 function load(){try{return JSON.parse(localStorage.getItem(KEY))||seed()}catch(e){return seed()}}
-function seed(){return{settings:{base:'',key:'',model:''},books:[],concepts:[],args:[],edges:[],cards:[],qa:[],gm:{xp:0,streak:0,longest:0,lastDay:'',ach:[],day:null},curBook:null,curSel:''}}
+function seed(){return{settings:{base:'',key:'',model:''},books:[],concepts:[],args:[],edges:[],cards:[],qa:[],quotes:[],gm:{xp:0,streak:0,longest:0,lastDay:'',ach:[],day:null},curBook:null,curSel:''}}
 function save(){S.updatedAt=now();localStorage.setItem(KEY,JSON.stringify(S));scheduleSync()}
 const uid=()=>Math.random().toString(36).slice(2,9);
 const now=()=>Date.now();
@@ -713,6 +715,7 @@ function toggleAssist(force){const a=document.querySelector('.assist');if(!a)ret
 async function selAct(act){
   selBar.style.display='none';
   const sel=S.curSel;if(!sel)return;
+  if(act==='smart'){smartCapture(sel);return}
   if(act==='concept'){addConcept(sel);return}
   if(act==='arg'){openArgModal(sel);return}
   if(act==='analogy'){document.querySelector('.nav button[data-p=link]').click();document.getElementById('linkInput').value=sel;runAnalogy();return}
@@ -879,6 +882,99 @@ async function genConceptCards(c){
 }
 function srcRef(){const b=curBook();if(!b)return'';const ch=b.chapters[b.curChap||0];return b.title+' · '+ch.title}
 
+/* ============ smart capture (一键精简 + 分类：概念/论据/金句) ============ */
+function smartCapture(raw){
+  const text=(raw||'').trim();if(text.length<2)return toast('请多选几个字');
+  window._smartText=text;window._smartEntities='';
+  openSmartModal(text,localSmartGuess(text));
+  if(hasAI())aiSmartAnalyze(text);
+}
+function localSmartGuess(text){
+  const short=text.replace(/\s+/g,'').length<=14;
+  const cg=localConceptGuess(text);
+  const hasArrow=skeleton(text).length>1;
+  return {
+    refined:text.length>80?text.slice(0,80)+'…':text,
+    isConcept:short||!!cg.term,
+    concept:{term:cg.term||text.slice(0,10),definition:cg.def||''},
+    isArgument:!short,
+    argument:{claim:'',mechanism:hasArrow?text:'',domain:'',polarity:'support'},
+    isQuote:!short
+  };
+}
+function openSmartModal(text,g){
+  showModal(`<h3 style="margin:0 0 8px">✨ 智能收藏</h3>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">AI 会精简你划中的表述，并识别其中的「概念 / 论据 / 金句」（可同时属于多类）。勾选需要的类别、微调后一键分类保存。</div>
+    <label>划中的原文</label>
+    <div style="background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px;max-height:90px;overflow:auto;font-size:13px;margin-bottom:8px">${esc(text)}</div>
+    <label>精简优化表述</label>
+    <textarea id="sm_refined" rows="2">${esc(g.refined)}</textarea>
+    <div id="smJudge" class="muted" style="margin:8px 0;font-size:12px">${hasAI()?'🤖 AI 分析中…':'未接 AI，使用本地初判（设置页接入大模型可获更准的精简与分类）。'}</div>
+    <div class="card" style="padding:10px;margin:8px 0">
+      <label style="display:flex;align-items:center;gap:8px;margin:0;font-size:13px"><input type="checkbox" id="sm_c_on" style="width:auto" ${g.isConcept?'checked':''}/> <b>🔑 存为概念</b></label>
+      <label>概念名（短、名词性）</label><input id="sm_c_name" value="${esc(g.concept.term||'')}" placeholder="如：过度补偿"/>
+      <label>一句话定义（可留空）</label><input id="sm_c_def" value="${esc(g.concept.definition||'')}"/>
+    </div>
+    <div class="card" style="padding:10px;margin:8px 0">
+      <label style="display:flex;align-items:center;gap:8px;margin:0;font-size:13px"><input type="checkbox" id="sm_a_on" style="width:auto" ${g.isArgument?'checked':''}/> <b>⚖️ 存为论据</b></label>
+      <label>论据（精简后）</label><input id="sm_a_text" value="${esc(g.refined)}"/>
+      <label>支持的结论 claim</label><input id="sm_a_claim" value="${esc(g.argument.claim||'')}"/>
+      <label>机制/因果链（用 → 连接）</label><input id="sm_a_mech" value="${esc(g.argument.mechanism||'')}"/>
+      <div class="row"><div class="col"><label>领域</label><input id="sm_a_dom" value="${esc(g.argument.domain||'')}" placeholder="生物/经济/心理…"/></div>
+      <div class="col"><label>极性</label><select id="sm_a_pol"><option value="support"${g.argument.polarity!=='counter'?' selected':''}>正向支持</option><option value="counter"${g.argument.polarity==='counter'?' selected':''}>反例</option></select></div></div>
+    </div>
+    <div class="card" style="padding:10px;margin:8px 0">
+      <label style="display:flex;align-items:center;gap:8px;margin:0;font-size:13px"><input type="checkbox" id="sm_q_on" style="width:auto" ${g.isQuote?'checked':''}/> <b>💎 存为金句</b></label>
+      <label>金句文本</label><textarea id="sm_q_text" rows="2">${esc(text)}</textarea>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn" onclick="saveSmartConfirm()">✅ 保存所选</button>
+      <button class="btn ghost" onclick="closeModal()">取消</button>
+    </div>`);
+  ['sm_refined','sm_c_name','sm_c_def','sm_a_text','sm_a_claim','sm_a_mech','sm_a_dom','sm_q_text'].forEach(id=>{const el=gid(id);if(el)el.addEventListener('input',()=>el.dataset.touched=1,{once:true})});
+}
+async function aiSmartAnalyze(text){
+  const box=gid('smJudge');if(!box)return;
+  try{
+    const r=await llm(
+      '你是知识建模助手。对给定阅读片段：1) 精简优化表述，使其更凝练、去口水话，但保留原意；2) 识别其中是否包含【概念】(可命名的名词性术语)、【论据】(“A 导致/支持 B”这类主张或因果命题)、【金句】(表达精彩、值得摘抄的句子)——可同时属于多类。返回JSON：{refined:"精简后的表述",isConcept:bool,concept:{term:"从原文提取的短名词性术语，≤10字",definition:"一句话定义，≤40字"},isArgument:bool,argument:{claim:"支持的结论",mechanism:"用 → 连接的因果链",domain:"领域词",polarity:"support或counter",entities:"逗号分隔的关键角色"},isQuote:bool,quote:"值得摘抄的金句(可精简)",reason:"一句话总体判断"}。中文。',
+      '阅读片段：\n'+text, true);
+    const j=JSON.parse(r);
+    if(!gid('smJudge'))return;
+    box.innerHTML='📝 '+esc(j.reason||'已分析');
+    const set=(id,v)=>{const el=gid(id);if(el&&v!=null&&(''+v).trim()&&!el.dataset.touched)el.value=v};
+    if(j.refined){set('sm_refined',j.refined);set('sm_a_text',j.refined)}
+    if(gid('sm_c_on'))gid('sm_c_on').checked=!!j.isConcept;
+    if(j.concept){set('sm_c_name',j.concept.term);set('sm_c_def',j.concept.definition)}
+    if(gid('sm_a_on'))gid('sm_a_on').checked=!!j.isArgument;
+    if(j.argument){set('sm_a_claim',j.argument.claim);set('sm_a_mech',j.argument.mechanism);set('sm_a_dom',j.argument.domain);
+      const pol=gid('sm_a_pol');if(pol)pol.value=j.argument.polarity==='counter'?'counter':'support';
+      window._smartEntities=Array.isArray(j.argument.entities)?j.argument.entities.join(','):(j.argument.entities||'')}
+    if(gid('sm_q_on'))gid('sm_q_on').checked=!!j.isQuote;
+    if(j.quote)set('sm_q_text',j.quote);
+  }catch(e){box.innerHTML='<span class="muted">AI 分析失败：'+esc(e.message)+'，可手动勾选后保存。</span>'}
+}
+function saveSmartConfirm(){
+  const refined=(gid('sm_refined').value||'').trim();
+  const saved=[];
+  if(gid('sm_c_on').checked){
+    const name=(gid('sm_c_name').value||'').trim();
+    if(name){_commitConcept(name,(gid('sm_c_def').value||'').trim(),'概念');saved.push('概念')}
+  }
+  if(gid('sm_a_on').checked){
+    const txt=(gid('sm_a_text').value||'').trim()||refined;
+    if(txt){S.args.push({id:uid(),t:now(),text:txt,claim:(gid('sm_a_claim').value||'').trim(),
+      mechanism:(gid('sm_a_mech').value||'').trim(),domain:(gid('sm_a_dom').value||'').trim(),
+      entities:window._smartEntities||'',polarity:gid('sm_a_pol').value,source:srcRef()});award(10,'新论据');saved.push('论据')}
+  }
+  if(gid('sm_q_on').checked){
+    const qt=(gid('sm_q_text').value||'').trim();
+    if(qt){S.quotes=S.quotes||[];S.quotes.push({id:uid(),t:now(),text:qt,refined:(refined&&refined!==qt)?refined:'',source:srcRef()});award(3,'金句');saved.push('金句')}
+  }
+  if(!saved.length)return toast('请至少勾选一个类别并填写内容');
+  window._smartEntities='';save();closeModal();toast('已保存：'+saved.join(' / '));render('kb');
+}
+
 /* ============ arguments (structured) ============ */
 function openArgModal(text,existing){
   const a=existing||{text,claim:'',mechanism:'',domain:'',entities:'',polarity:'support',source:srcRef()};
@@ -1025,6 +1121,9 @@ function render(p){
       <div class="meta">${a.mechanism?'机制: '+esc(a.mechanism)+' · ':''}${a.domain?'领域: '+esc(a.domain)+' · ':''}${a.polarity==='counter'?'反例':'支持'}
       <button class="btn ghost mini" onclick="editArg('${a.id}')">编辑</button>
       <button class="btn ghost mini" onclick="del('args','${a.id}')">删</button></div></div>`).join(''):'<div class="empty">阅读时选中文本→标论据</div>';
+    document.getElementById('quoteList').innerHTML=(S.quotes&&S.quotes.length)?S.quotes.map(q=>`<div class="item"><h4>${esc(q.text)}</h4>
+      <div class="meta">${q.refined?'精简: '+esc(q.refined)+' · ':''}${esc(q.source||'')}
+      <button class="btn ghost mini" style="float:right" onclick="del('quotes','${q.id}')">删</button></div></div>`).join(''):'<div class="empty">阅读时选中文本→✨智能收藏，可存为金句</div>';
   }
   if(p==='link'){
     document.getElementById('edgeList').innerHTML=S.edges.length?S.edges.map(e=>`<div class="item"><h4><span class="chip ${e.type==='冲突'?'w':'g'}">${e.type}</span></h4>
@@ -1041,7 +1140,7 @@ function editArg(id){openArgModal(null,S.args.find(a=>a.id===id))}
 
 function renderReport(){
   const mastered=S.concepts.filter(c=>['能应用','能评价'].includes(c.mastery)).length;
-  const stats=[['📚',S.books.length,'书籍'],['🔑',S.concepts.length,'概念'],['⚖️',S.args.length,'论据'],['🔗',S.edges.length,'关联'],['🗂️',S.cards.length,'复习卡'],['✅',mastered,'达应用层']];
+  const stats=[['📚',S.books.length,'书籍'],['🔑',S.concepts.length,'概念'],['⚖️',S.args.length,'论据'],['💎',(S.quotes||[]).length,'金句'],['🔗',S.edges.length,'关联'],['🗂️',S.cards.length,'复习卡'],['✅',mastered,'达应用层']];
   document.getElementById('statGrid').innerHTML=stats.map(s=>`<div class="stat"><div class="n">${s[1]}</div><div class="l">${s[0]} ${s[2]}</div></div>`).join('');
   const levels=['未接触','初步理解','能复述','能应用','能评价'];
   const dist=levels.map(l=>[l,S.concepts.filter(c=>c.mastery===l).length]);
@@ -1074,6 +1173,7 @@ function doSearch(){
   S.args.forEach(a=>res.push({t:'论据',txt:a.text,s:Math.max(jac(qb,bigrams(a.text)),jac(qb,bigrams(a.mechanism))*0.9)}));
   S.books.forEach(b=>b.chapters.forEach(ch=>res.push({t:'章节',txt:b.title+' · '+ch.title,s:Math.max(jac(qb,bigrams(ch.title)),jac(qb,bigrams(ch.content))*0.7)})));
   S.qa.forEach(x=>res.push({t:'问答',txt:x.q,s:jac(qb,bigrams(x.q))}));
+  (S.quotes||[]).forEach(q=>res.push({t:'金句',txt:q.text,s:jac(qb,bigrams(q.text))}));
   const top=res.filter(r=>r.s>0.03).sort((a,b)=>b.s-a.s).slice(0,20);
   showModal('<h3 style="margin:0 0 12px">搜索：'+esc(q)+'</h3>'+(top.length?top.map(r=>`<div class="item"><span class="chip">${r.t}</span> ${esc(r.txt.slice(0,140))}</div>`).join(''):'<div class="empty">无匹配结果</div>')+'<div style="margin-top:10px"><button class="btn ghost" onclick="closeModal()">关闭</button></div>');
 }
@@ -1262,9 +1362,11 @@ function exportBookMD(bookId){
   const b=S.books.find(x=>x.id===bookId);if(!b)return;
   const cs=S.concepts.filter(c=>(c.source||'').startsWith(b.title));
   const as=S.args.filter(a=>(a.source||'').startsWith(b.title));
+  const qs=(S.quotes||[]).filter(q=>(q.source||'').startsWith(b.title));
   let md='# '+b.title+'\n\n## 章节\n'+b.chapters.map(c=>'- '+c.title).join('\n')+'\n\n';
   md+='## 关键概念\n'+(cs.length?cs.map(c=>'- **'+c.name+'** （'+c.mastery+'）').join('\n'):'（无）')+'\n\n';
   md+='## 论据\n'+(as.length?as.map(a=>'- '+a.text+(a.mechanism?'\n  - 机制：'+a.mechanism:'')+(a.domain?'\n  - 领域：'+a.domain:'')+(a.claim?'\n  - 结论：'+a.claim:'')).join('\n'):'（无）')+'\n\n';
+  md+='## 金句\n'+(qs.length?qs.map(q=>'> '+q.text+(q.refined?'\n>\n> （精简：'+q.refined+'）':'')).join('\n\n'):'（无）')+'\n\n';
   md+='## 关联网络\n'+(S.edges.length?S.edges.map(e=>'- ['+e.type+'] '+(e.fromText||'').slice(0,40)+' ⇄ '+(e.toText||'').slice(0,40)).join('\n'):'（无）')+'\n';
   const blob=new Blob([md],{type:'text/markdown'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=b.title+'.md';a.click();toast('已导出 Markdown 大纲');
 }
