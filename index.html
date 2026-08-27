@@ -186,6 +186,7 @@
       <button data-p="link">🔗 关联</button>
       <button data-p="graph">🕸️ 图谱</button>
       <button data-p="model">🧩 模型</button>
+      <button data-p="apply">🧪 应用</button>
       <button data-p="review">🔁 复习 <span id="revBadge" class="rev-badge"></span></button>
       <button data-p="insight">🧭 洞察</button>
       <button data-p="growth">🎮 成长</button>
@@ -281,6 +282,26 @@
       <div class="card"><h4 style="margin:0 0 10px">🧩 我的模型库</h4>
         <input id="mdSearch" placeholder="🔍 搜模型…" style="margin-bottom:10px" oninput="renderModels()"/>
         <div id="modelList"></div></div>
+    </section>
+
+    <!-- APPLY -->
+    <section class="page" id="p-apply">
+      <h2 class="title">调用与检验</h2>
+      <div class="desc">芒格：面对现实问题，用多个学科的模型叠加分析，并善用逆向思维。这里先让你自己想，再由 AI 补你的盲区——真正把模型“用起来”。</div>
+      <div class="card"><h4 style="margin:0 0 8px">🧠 多模型情境分析</h4>
+        <label>一个现实情境 / 决策 / 问题</label><textarea id="apScene" rows="2" placeholder="例：该不该接受这份高薪但重复性强的工作？"></textarea>
+        <label>你打算调用哪些思维模型？（先自己列，逗号分隔）</label><input id="apModels" placeholder="机会成本, 复利, 激励错位…"/>
+        <div id="apChips" style="margin:6px 0"></div>
+        <div style="margin-top:8px"><button class="btn" onclick="runMultiModel()">提交分析（需 AI）</button></div>
+        <div id="apOut" style="margin-top:10px"></div>
+      </div>
+      <div class="card"><h4 style="margin:0 0 8px">🔄 逆向思维练习</h4>
+        <div class="muted" style="font-size:12px;margin-bottom:6px">雅各比：“反过来想，总是反过来想。” 与其问怎样成功，先问怎样必然失败，然后避开。</div>
+        <label>你的目标 / 想解决的问题</label><input id="invGoal" placeholder="例：如何让团队高效协作？"/>
+        <label>反过来想：怎样一定会把它搞砸？（先自己写）</label><textarea id="invMine" rows="2" placeholder="列出会导致失败的做法…"></textarea>
+        <div style="margin-top:8px"><button class="btn" onclick="runInversion()">让 AI 点评并补充（需 AI）</button></div>
+        <div id="invOut" style="margin-top:10px"></div>
+      </div>
     </section>
 
     <!-- REVIEW -->
@@ -1041,7 +1062,68 @@ function renderModels(){
     ${(m.examples&&m.examples.length)?`<div class="muted" style="font-size:12px">📎 案例：${m.examples.map(esc).join('；')}</div>`:''}
     <div class="meta" style="margin-top:6px">${esc(m.source||'')}
       <button class="btn ghost mini" style="float:right" onclick="del('models','${m.id}');renderModels()">删</button>
-      <button class="btn ghost mini" style="float:right" onclick="editModel('${m.id}')">编辑</button></div></div>`).join(''):'<div class="empty">还没有模型。读到重要机制→工具条「🧩提模型」，或右上「新建模型」。</div>';
+      <button class="btn ghost mini" style="float:right" onclick="editModel('${m.id}')">编辑</button>
+      <button class="btn ghost mini" style="float:right" onclick="makeApplyCard('${m.id}')">🎓应用</button></div></div>`).join(''):'<div class="empty">还没有模型。读到重要机制→工具条「🧩提模型」，或右上「新建模型」。</div>';
+}
+function makeApplyCard(id){
+  const m=(S.models||[]).find(x=>x.id===id);if(!m)return;
+  S.cards.push(newCard('🎓 用【'+m.name+'】解释一个新的现实例子（越跨领域越好，不要重复已有案例）',m.core||m.name,{type:'model-apply',refId:id}));
+  save();toast('已加入复习：'+m.name+' 的应用练习');
+}
+
+/* ============ Layer3: 调用与检验 (apply models & inversion) ============ */
+function renderApply(){
+  const el=gid('apChips');if(!el)return;const models=S.models||[];
+  el.innerHTML=models.length
+    ?('<span class="muted" style="font-size:12px">点标签从你的模型库快速加入：</span> '+models.slice(0,40).map(m=>`<span class="chip acc" style="cursor:pointer" onclick='addApModel(${JSON.stringify(m.name)})'>${esc(m.name)}</span>`).join(''))
+    :'<span class="muted" style="font-size:12px">模型库还空着，先去「🧩 模型」页积累，这里就能一键调用它们。</span>';
+}
+function addApModel(name){
+  const el=gid('apModels');if(!el)return;
+  const arr=el.value.trim()?el.value.split(/[,，]/).map(s=>s.trim()).filter(Boolean):[];
+  if(!arr.includes(name))arr.push(name);el.value=arr.join(', ');
+}
+async function runMultiModel(){
+  const out=gid('apOut');const scene=gid('apScene').value.trim();if(!scene)return toast('先输入情境');
+  const mine=gid('apModels').value.trim();
+  if(!hasAI())return out.innerHTML='<div class="muted">此功能需接入大模型（设置页）。你仍可自己在该情境下逐个套用模型库里的模型试着分析。</div>';
+  out.innerHTML='<div class="muted">多模型分析中…</div>';
+  try{
+    const lib=(S.models||[]).map(m=>m.name+(m.core?'('+m.core+')':'')).join('；');
+    const r=await llm('你是芒格式决策教练。用户给出情境和他想调用的模型。请：1)评价他选的模型是否贴切；2)补充他漏掉的、来自不同学科的关键模型(尤其跨学科)；3)用多模型叠加给出简洁分析；4)指出最大的认知陷阱。返回JSON：{picked_review:"对用户所选模型的点评",missing:[{name,discipline,why}],analysis:"多模型叠加分析",trap:"最需警惕的陷阱"}。中文。',
+      '情境：'+scene+'\n用户想调用的模型：'+(mine||'（未填）')+'\n用户已有的模型库：'+(lib||'（空）'),true);
+    const j=JSON.parse(r);
+    out.innerHTML=`<div class="card" style="background:var(--panel2)">
+      ${j.picked_review?'<div style="font-size:13px">✅ 你的选择：'+esc(j.picked_review)+'</div>':''}
+      ${(j.missing&&j.missing.length)?'<div style="margin-top:8px;font-size:13px">➕ 你可能漏掉的模型：<div style="margin-top:4px">'+j.missing.map(m=>`<div style="margin:3px 0">• <b>${esc(m.name||'')}</b> <span class="chip">${esc(m.discipline||'')}</span> ${esc(m.why||'')} <button class="btn ghost mini" onclick='quickAddModel(${JSON.stringify(m.name||'')},${JSON.stringify(m.discipline||'')},${JSON.stringify(m.why||'')})'>存入模型库</button></div>`).join('')+'</div></div>':''}
+      ${j.analysis?'<div style="margin-top:8px;font-size:13px;line-height:1.7">🧩 叠加分析：'+esc(j.analysis)+'</div>':''}
+      ${j.trap?'<div style="margin-top:8px;font-size:13px" class="tag-conflict">⚠ 最大陷阱：'+esc(j.trap)+'</div>':''}
+    </div>`;
+    award(8,'情境分析');
+  }catch(e){out.innerHTML='出错：'+esc(e.message)}
+}
+function quickAddModel(name,disc,why){
+  if(!name)return;S.models=S.models||[];
+  if(S.models.some(m=>m.name===name))return toast('模型库已有「'+name+'」');
+  S.models.push({id:uid(),t:now(),name,discipline:disc||'',core:why||'',when:'',boundary:'',examples:[],source:'情境分析',mastery:'初步理解'});
+  award(12,'新模型');save();toast('已存入模型库：'+name);
+}
+async function runInversion(){
+  const out=gid('invOut');const goal=gid('invGoal').value.trim();if(!goal)return toast('先输入目标');
+  const mine=gid('invMine').value.trim();
+  if(!hasAI())return out.innerHTML='<div class="muted">此功能需接入大模型。逆向口诀：与其问“怎样成功”，先问“怎样必然失败”，再逐条避开。</div>';
+  out.innerHTML='<div class="muted">逆向分析中…</div>';
+  try{
+    const r=await llm('你是逆向思维(inversion)教练，师承雅各比“反过来想，总是反过来想”。用户给出目标及他自己列的“怎样会失败”。请：1)点评他列的失败项；2)补充他没想到的关键失败路径；3)由此反推应坚持的正面原则。返回JSON：{review:"对用户失败清单的点评",more_failures:["补充的失败路径"],principles:["反推出的正面原则"]}。中文。',
+      '目标：'+goal+'\n用户列的失败做法：'+(mine||'（未填）'),true);
+    const j=JSON.parse(r);
+    out.innerHTML=`<div class="card" style="background:var(--panel2)">
+      ${j.review?'<div style="font-size:13px">💬 '+esc(j.review)+'</div>':''}
+      ${(j.more_failures&&j.more_failures.length)?'<div style="margin-top:8px;font-size:13px">🕳 你没想到的失败路径：'+j.more_failures.map(f=>'<div style="margin:3px 0">• '+esc(f)+'</div>').join('')+'</div>':''}
+      ${(j.principles&&j.principles.length)?'<div style="margin-top:8px;font-size:13px">🧭 反推出的原则：'+j.principles.map(p=>'<div style="margin:3px 0">✔ '+esc(p)+'</div>').join('')+'</div>':''}
+    </div>`;
+    award(8,'逆向思维');
+  }catch(e){out.innerHTML='出错：'+esc(e.message)}
 }
 
 /* ============ concepts ============ */
@@ -1364,6 +1446,7 @@ function render(p){
   if(p==='read')openReader();
   if(p==='graph')initGraph();
   if(p==='model')renderModels();
+  if(p==='apply')renderApply();
   if(p==='insight')renderCog();
   if(p==='growth')renderGrowth();
   if(p==='kb'){
