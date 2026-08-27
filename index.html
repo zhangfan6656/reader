@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
 <title>AI 阅读教练 · 理解-记忆-关联-复习</title>
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -381,6 +381,20 @@ function save(){S.updatedAt=now();localStorage.setItem(KEY,JSON.stringify(S));sc
 const uid=()=>Math.random().toString(36).slice(2,9);
 const now=()=>Date.now();
 function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',2200)}
+
+/* ============ lock page zoom (防误触缩放，字号请用阅读工具条) ============ */
+(function(){
+  // Ctrl/⌘ + 滚轮 缩放
+  window.addEventListener('wheel',e=>{if(e.ctrlKey||e.metaKey){e.preventDefault()}},{passive:false});
+  // Ctrl/⌘ + +/-/0/= 缩放
+  window.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&['+','-','=','0','_'].includes(e.key)){e.preventDefault()}});
+  // Safari/触控板 双指捏合手势
+  ['gesturestart','gesturechange','gestureend'].forEach(t=>document.addEventListener(t,e=>e.preventDefault(),{passive:false}));
+  // 移动端 双指缩放 & 双击放大
+  document.addEventListener('touchmove',e=>{if(e.touches&&e.touches.length>1)e.preventDefault()},{passive:false});
+  let lastTouch=0;
+  document.addEventListener('touchend',e=>{const n=Date.now();if(n-lastTouch<=300)e.preventDefault();lastTouch=n},{passive:false});
+})();
 
 /* ============ nav ============ */
 document.getElementById('nav').addEventListener('click',e=>{

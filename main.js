@@ -9,6 +9,11 @@ function createWindow() {
   });
   win.setAlwaysOnTop(true, 'screen-saver');
   win.loadFile('index.html');
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.setVisualZoomLevelLimits(1, 1);
+    win.webContents.setZoomFactor(1);
+  });
+  win.webContents.on('zoom-changed', () => win.webContents.setZoomFactor(1));
 }
 app.whenReady().then(() => {
   createWindow();
