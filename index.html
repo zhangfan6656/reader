@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="阅读教练" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="theme-color" content="#0f1115" />
+<link rel="manifest" href="./manifest.webmanifest" />
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Crect width='180' height='180' rx='40' fill='%230f1115'/%3E%3Ctext x='90' y='120' font-size='90' text-anchor='middle'%3E📖%3C/text%3E%3C/svg%3E" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
@@ -381,6 +382,11 @@ function save(){S.updatedAt=now();localStorage.setItem(KEY,JSON.stringify(S));sc
 const uid=()=>Math.random().toString(36).slice(2,9);
 const now=()=>Date.now();
 function toast(t){const e=document.getElementById('toast');e.textContent=t;e.style.display='block';clearTimeout(e._t);e._t=setTimeout(()=>e.style.display='none',2200)}
+
+/* ============ PWA service worker (仅 http(s) 下注册，Electron file:// 跳过) ============ */
+if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+}
 
 /* ============ lock page zoom (防误触缩放，字号请用阅读工具条) ============ */
 (function(){
