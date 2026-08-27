@@ -2,7 +2,21 @@
   "name": "reading-coach",
   "version": "1.0.0",
   "main": "main.js",
-  "scripts": { "start": "electron .", "dist": "electron-builder --win portable" },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win portable",
+    "web:build": "node scripts/build-web.js",
+    "ios:sync": "npm run web:build && npx cap sync ios",
+    "ios:open": "npx cap open ios"
+  },
   "build": { "productName": "AIReadingCoach", "appId": "com.reading.coach", "files": ["main.js","preload.js","index.html"], "win": { "target": "portable" } },
-  "devDependencies": { "electron": "^31.7.7", "electron-builder": "^24.13.3" }
+  "dependencies": {
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/ios": "^6.1.2"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
+    "@capacitor/cli": "^6.1.2"
+  }
 }

@@ -1,0 +1,8 @@
+{
+  "appId": "com.reading.coach",
+  "appName": "AI Reading Coach",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "always"
+  }
+}
